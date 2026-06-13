@@ -1,0 +1,25 @@
+name: geoguardgs
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch
+  - torchvision
+  - pytorch-cuda=11.8
+  - numpy
+  - scipy
+  - pandas
+  - opencv
+  - pillow
+  - matplotlib
+  - tqdm
+  - pyyaml
+  - tensorboard
+  - pip:
+      - yacs
+      - lpips
+      - transformers
+      - huggingface_hub

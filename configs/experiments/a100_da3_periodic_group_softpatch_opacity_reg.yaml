@@ -1,0 +1,15 @@
+_BASE_: a100_da3_periodic_group_softpatch.yaml
+exp_name: a100_da3_periodic_group_softpatch_opacity_reg
+model_path: outputs/a100_main_experiments/da3_periodic_group_softpatch_opacity_reg
+train:
+  gaussian_control:
+    enabled: true
+    control_mode: opacity_regularization
+    opacity_reg_weight: 0.00001
+    allow_parameter_modification: false
+    allow_real_prune: false
+    allow_real_split: false
+    allow_real_shrink: false
+    max_controlled_gaussians: 256
+    protect_good_groups: true
+    skip_low_evidence: true

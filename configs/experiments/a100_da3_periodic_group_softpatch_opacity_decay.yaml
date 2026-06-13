@@ -1,0 +1,18 @@
+_BASE_: a100_da3_periodic_group_softpatch.yaml
+exp_name: a100_da3_periodic_group_softpatch_opacity_decay
+model_path: outputs/a100_main_experiments/da3_periodic_group_softpatch_opacity_decay
+train:
+  feedback_controller:
+    allow_parameter_modification: false
+  gaussian_control:
+    enabled: true
+    control_mode: opacity_decay_apply
+    allow_parameter_modification: true
+    allow_real_prune: false
+    allow_real_split: false
+    allow_real_shrink: false
+    opacity_decay_factor: 0.95
+    max_decay_gaussians_per_trigger: 10
+    max_decay_ratio: 0.00005
+    protect_good_groups: true
+    skip_low_evidence: true

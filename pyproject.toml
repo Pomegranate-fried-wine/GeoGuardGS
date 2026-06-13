@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoguardgs"
+version = "0.1.0"
+description = "Closed-loop geometry-responsible Gaussian control for street scene reconstruction"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+  {name = "Changhao Han"}
+]
+
+[tool.setuptools.packages.find]
+include = ["geoguardgs*"]

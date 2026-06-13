@@ -1,0 +1,45 @@
+# Data and weights
+data/waymo/*
+!data/waymo/.gitkeep
+!data/waymo/README.md
+weights/da3/*
+!weights/da3/.gitkeep
+!weights/da3/README.md
+weights/streetgs/*
+!weights/streetgs/.gitkeep
+!weights/streetgs/README.md
+
+# Outputs and checkpoints
+outputs/*
+!outputs/.gitkeep
+checkpoints/*
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.npz
+*.npy
+
+# Logs, trackers, and caches
+*.log
+wandb/
+runs/
+tensorboard/
+__pycache__/
+*.pyc
+*.egg-info/
+.cache/
+.pytest_cache/
+
+# Heavy media
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.exr
+
+# Local machine files
+.env
+.vscode/
+.idea/
+Thumbs.db

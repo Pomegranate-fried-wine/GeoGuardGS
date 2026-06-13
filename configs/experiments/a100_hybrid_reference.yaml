@@ -1,0 +1,32 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_hybrid_reference
+model_path: outputs/a100_main_experiments/hybrid_reference
+geovit:
+  enabled: true
+train:
+  guided_feedback:
+    enabled: true
+    supervision_mode: hybrid_reference
+    use_lidar_depth: true
+    use_da3_structure: true
+    assert_no_lidar_supervision: false
+  feedback_controller:
+    enabled: true
+    mode: feedback_update
+    start_iter: 1000
+    interval: 500
+    risk_source: da3_structure
+    supervision_mode: hybrid_reference
+    feedback_mode: group_softpatch
+    contribution_source: live_current_model
+    recompute_risk: true
+    recompute_contribution: true
+    recompute_responsible_groups: true
+    recompute_softpatch: true
+  gaussian_control:
+    enabled: true
+    control_mode: protect_only
+    supervision_mode: hybrid_reference
+    counterfactual_objective: hybrid
+optim:
+  lambda_depth_lidar: 0.02

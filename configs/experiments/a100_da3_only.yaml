@@ -1,0 +1,21 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_da3_only
+model_path: outputs/a100_main_experiments/da3_only
+geovit:
+  enabled: true
+train:
+  guided_feedback:
+    enabled: true
+    supervision_mode: da3_unsupervised
+    use_lidar_depth: false
+    use_da3_structure: true
+    assert_no_lidar_supervision: true
+    feedback_mode: region
+  feedback_controller:
+    enabled: false
+    mode: "off"
+  gaussian_control:
+    enabled: false
+    control_mode: "off"
+optim:
+  lambda_depth_lidar: 0.0

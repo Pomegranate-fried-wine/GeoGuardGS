@@ -1,0 +1,32 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_lidar_supervised_reference
+model_path: outputs/a100_main_experiments/lidar_supervised_reference
+train:
+  guided_feedback:
+    enabled: true
+    supervision_mode: lidar_supervised
+    use_lidar_depth: true
+    use_da3_structure: false
+    assert_no_lidar_supervision: false
+  feedback_controller:
+    enabled: true
+    mode: feedback_update
+    start_iter: 1000
+    interval: 500
+    risk_source: lidar_error
+    supervision_mode: lidar_supervised
+    feedback_mode: group_softpatch
+    contribution_source: live_current_model
+    recompute_risk: true
+    recompute_contribution: true
+    recompute_responsible_groups: true
+    recompute_softpatch: true
+    allow_parameter_modification: false
+  gaussian_control:
+    enabled: true
+    control_mode: protect_only
+    risk_source: lidar_error
+    supervision_mode: lidar_supervised
+    counterfactual_objective: lidar_depth_error
+optim:
+  lambda_depth_lidar: 0.05

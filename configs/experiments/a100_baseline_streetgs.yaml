@@ -1,0 +1,16 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_baseline_streetgs
+model_path: outputs/a100_main_experiments/baseline_streetgs
+train:
+  guided_feedback:
+    enabled: false
+    use_lidar_depth: false
+    use_da3_structure: false
+  feedback_controller:
+    enabled: false
+    mode: "off"
+  gaussian_control:
+    enabled: false
+    control_mode: "off"
+optim:
+  lambda_depth_lidar: 0.0

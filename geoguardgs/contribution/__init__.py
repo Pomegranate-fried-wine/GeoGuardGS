@@ -1,0 +1,1 @@
+"""Contribution-aware responsibility utilities."""

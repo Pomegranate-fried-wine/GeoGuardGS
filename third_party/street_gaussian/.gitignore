@@ -1,0 +1,48 @@
+*.pyc
+.vscode
+output
+data
+build
+diff_rasterization/diff_rast.egg-info
+diff_rasterization/dist
+tensorboard_3d
+screenshots
+
+# 深度学习权重与大文件
+*.pth
+*.ckpt
+*.pkl
+*.npy
+*.npz
+*.h5
+*.mp4
+*.png
+*.jpg
+
+# 数据集与运行日志
+data/
+datasets/
+!lib/datasets/
+!lib/datasets/**
+runs/
+logs/
+*.log
+
+# Python 编译缓存与虚拟环境
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# 编译生成的文件 (比如 3DGS 编译的 CUDA 算子扩展)
+build/
+dist/
+*.egg-info/
+src/*.egg-info/
+
+# 系统与 IDE 缓存
+.DS_Store
+.vscode/
+.idea/

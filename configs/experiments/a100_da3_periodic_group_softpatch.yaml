@@ -1,0 +1,35 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_da3_periodic_group_softpatch
+model_path: outputs/a100_main_experiments/da3_periodic_group_softpatch
+geovit:
+  enabled: true
+train:
+  guided_feedback:
+    enabled: true
+    supervision_mode: da3_unsupervised
+    use_lidar_depth: false
+    use_da3_structure: true
+    assert_no_lidar_supervision: true
+    feedback_mode: softpatch
+  feedback_controller:
+    enabled: true
+    mode: feedback_update
+    start_iter: 1000
+    interval: 500
+    risk_source: da3_boundary
+    supervision_mode: da3_unsupervised
+    feedback_mode: group_softpatch
+    repair_mode: "none"
+    contribution_source: live_current_model
+    recompute_risk: true
+    recompute_contribution: true
+    recompute_responsible_groups: true
+    recompute_softpatch: true
+    run_counterfactual: false
+    run_candidate_tagging: true
+    allow_parameter_modification: false
+  gaussian_control:
+    enabled: false
+    control_mode: "off"
+optim:
+  lambda_depth_lidar: 0.0
