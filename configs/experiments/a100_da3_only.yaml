@@ -10,7 +10,7 @@ train:
     use_lidar_depth: false
     use_da3_structure: true
     assert_no_lidar_supervision: true
-    feedback_mode: region
+    feedback_mode: global
   feedback_controller:
     enabled: false
     mode: "off"

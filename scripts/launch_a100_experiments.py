@@ -45,7 +45,7 @@ def main():
         exp_dir.mkdir(parents=True, exist_ok=True)
         cmd = [sys.executable, args.train_entry, "--config", str(cfg_path)]
         if args.resume:
-            cmd.append("--resume")
+            cmd.extend(["resume", "True"])
         if args.extra_args:
             cmd.extend(args.extra_args.split())
         env = os.environ.copy()

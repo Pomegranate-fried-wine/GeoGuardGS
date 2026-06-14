@@ -1,0 +1,12 @@
+_BASE_: ../experiments/a100_baseline_streetgs.yaml
+data:
+  selected_frames: [0, 2]
+  cameras: [0, 1, 2]
+  use_colmap: false
+  filter_colmap: false
+train:
+  iterations: 100
+  test_iterations: [50, 100]
+  save_iterations: [100]
+  checkpoint_iterations: [100]
+resume: false

@@ -15,18 +15,21 @@ import os
 
 nvcc_compiler_flags = [
     "-allow-unsupported-compiler",
-    "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-    "-D_CRT_SECURE_NO_WARNINGS",
-    "-Xcompiler",
-    "/wd4819",
 ]
-cxx_compiler_flags = [
-    "/D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-    "/D_CRT_SECURE_NO_WARNINGS",
-]
+cxx_compiler_flags = []
 
 if os.name == 'nt':
-    cxx_compiler_flags.append("/wd4624")
+    nvcc_compiler_flags.extend([
+        "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
+        "-D_CRT_SECURE_NO_WARNINGS",
+        "-Xcompiler",
+        "/wd4819",
+    ])
+    cxx_compiler_flags.extend([
+        "/D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
+        "/D_CRT_SECURE_NO_WARNINGS",
+        "/wd4624",
+    ])
 
 setup(
     name="simple_knn",

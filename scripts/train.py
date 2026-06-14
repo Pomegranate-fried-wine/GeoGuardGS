@@ -11,6 +11,44 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
+
+def _deep_merge(base, override):
+    result = dict(base or {})
+    for key, value in (override or {}).items():
+        if key == "_BASE_":
+            continue
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _load_merged_config(config_path):
+    config_path = Path(config_path).resolve()
+    with config_path.open("r", encoding="utf-8") as f:
+        current = yaml.safe_load(f) or {}
+    base_ref = current.get("_BASE_")
+    if not base_ref:
+        return current
+    base_path = Path(base_ref)
+    if not base_path.is_absolute():
+        base_path = (config_path.parent / base_path).resolve()
+    return _deep_merge(_load_merged_config(base_path), current)
+
+
+def _materialize_config(repo_root, config_path):
+    payload = _load_merged_config(config_path)
+    payload["workspace"] = str(repo_root)
+    out_dir = repo_root / ".geoguardgs_merged_configs"
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / Path(config_path).name
+    with out_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(payload, f, sort_keys=False, allow_unicode=True)
+    return out_path
+
 
 def main():
     repo_root = Path(__file__).resolve().parents[1]
@@ -30,7 +68,7 @@ def main():
             p = Path(arg)
             if not p.is_absolute():
                 p = (repo_root / p).resolve()
-            args.append(str(p))
+            args.append(str(_materialize_config(repo_root, p)))
         else:
             args.append(arg)
     cmd = [sys.executable, str(train_entry)] + args

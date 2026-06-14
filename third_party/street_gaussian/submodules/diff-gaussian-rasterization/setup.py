@@ -16,18 +16,21 @@ os.path.dirname(os.path.abspath(__file__))
 
 nvcc_compiler_flags = [
     "-allow-unsupported-compiler",
-    "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-    "-D_CRT_SECURE_NO_WARNINGS",
-    "-Xcompiler",
-    "/wd4819",
     "-I" + os.path.join(os.path.dirname(os.path.abspath(__file__)), "third_party/glm/"),
 ]
-cxx_compiler_flags = [
-    "/D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-    "/D_CRT_SECURE_NO_WARNINGS",
-]
+cxx_compiler_flags = []
 if os.name == "nt":
-    cxx_compiler_flags.append("/wd4819")
+    nvcc_compiler_flags.extend([
+        "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
+        "-D_CRT_SECURE_NO_WARNINGS",
+        "-Xcompiler",
+        "/wd4819",
+    ])
+    cxx_compiler_flags.extend([
+        "/D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
+        "/D_CRT_SECURE_NO_WARNINGS",
+        "/wd4819",
+    ])
 
 setup(
     name="diff_gaussian_rasterization",

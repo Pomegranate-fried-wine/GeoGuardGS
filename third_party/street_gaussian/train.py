@@ -104,7 +104,14 @@ def compute_da3_structure_guided_loss(
         viewpoint_cam, depth.shape, depth.device
     )
     if guided_weight_map is None:
-        return depth.sum() * 0.0
+        if getattr(guided_feedback, "feedback_mode", "") != "global":
+            return depth.sum() * 0.0
+        guided_weight_map = torch.ones_like(depth, dtype=torch.float32, device=depth.device)
+        guided_stats = {
+            "guided_region_count": 0,
+            "guided_region_pixels": int(depth.numel()),
+            "guided_view": str(getattr(viewpoint_cam, "image_name", "")),
+        }
 
     da3_guidance = da3_bridge(viewpoint_cam)
     da3_depth = da3_guidance["relative_depth"]
@@ -323,27 +330,34 @@ def training():
     scene = Scene(gaussians=gaussians, dataset=dataset)
 
     gaussians.training_setup()
-    try:
-        if cfg.loaded_iter == -1:
-            loaded_iter = searchForMaxIteration(cfg.trained_model_dir)
-        else:
-            loaded_iter = cfg.loaded_iter
-        ckpt_path = os.path.join(cfg.trained_model_dir, f'iteration_{loaded_iter}.pth')
-        state_dict = torch.load(ckpt_path)
-        start_iter = state_dict['iter']
-        print(f'Loading model from {ckpt_path}')
-        gaussians.load_state_dict(state_dict)
-    except FileNotFoundError as e:
-        print(f'[Checkpoint] No checkpoint loaded: {e}')
-    except AssertionError as e:
-        print(f'[Checkpoint] No checkpoint loaded: {e}')
+    if cfg.resume:
+        try:
+            if cfg.loaded_iter == -1:
+                loaded_iter = searchForMaxIteration(cfg.trained_model_dir)
+            else:
+                loaded_iter = cfg.loaded_iter
+            ckpt_path = os.path.join(cfg.trained_model_dir, f'iteration_{loaded_iter}.pth')
+            state_dict = torch.load(ckpt_path)
+            start_iter = state_dict['iter']
+            print(f'Loading model from {ckpt_path}')
+            gaussians.load_state_dict(state_dict)
+        except (FileNotFoundError, AssertionError, ValueError) as e:
+            raise RuntimeError(
+                f"resume=True but no readable checkpoint was found in {cfg.trained_model_dir}. "
+                "Set resume=false for from-scratch training."
+            ) from e
+    else:
+        print("[Checkpoint] resume=false; starting from scratch without checkpoint search.")
 
     print(f'Starting from {start_iter}')
     save_cfg(cfg, cfg.model_path, epoch=start_iter)
 
     gaussians_renderer = StreetGaussianRenderer()
     guided_feedback = make_guided_feedback_controller(cfg.train.guided_feedback)
-    guided_feedback.validate_supervision(optim_args)
+    if guided_feedback.enabled:
+        guided_feedback.validate_supervision(optim_args)
+    else:
+        print("[GuidedFeedback] disabled; skipping signal loading and supervision checks.")
     if guided_feedback.enabled:
         print(f"[GuidedFeedback] {guided_feedback.summary}")
     feedback_controller = make_periodic_feedback_controller(cfg.train.feedback_controller, model_path=cfg.model_path)
@@ -354,6 +368,8 @@ def training():
     repair_operator = GaussianRepairOperator(cfg.train.gaussian_control)
     if gaussian_control.enabled:
         print(f"[GaussianControl] {gaussian_control.get_control_summary()}")
+    else:
+        print("[GaussianControl] disabled; skipping group evidence checks and control logic.")
     da3_bridge = None
     if guided_feedback.enabled and guided_feedback.use_da3_structure:
         da3_bridge = make_da3_bridge(cfg.geovit)

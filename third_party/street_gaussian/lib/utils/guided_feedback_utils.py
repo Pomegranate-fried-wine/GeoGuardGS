@@ -42,10 +42,12 @@ class GuidedFeedbackController:
             "good_pixel_count": 0,
             "loaded": False,
         }
-        if self.enabled:
+        if self.enabled and self.feedback_mode != "global":
             self._load()
 
     def validate_supervision(self, optim_args):
+        if not self.enabled:
+            return
         mode = self.supervision_mode
         allowed = {"lidar_supervised", "da3_unsupervised", "hybrid_reference"}
         if mode not in allowed:
@@ -155,7 +157,8 @@ class GuidedFeedbackController:
     def update_signal_path(self, signal_path):
         self.signal_path = str(signal_path or "")
         self.summary["signal_path"] = self.signal_path
-        self._load()
+        if self.feedback_mode != "global":
+            self._load()
         return self.summary
 
     def _load_pixel_feedback(self, signal):
@@ -187,6 +190,14 @@ class GuidedFeedbackController:
     def make_region_weight_map(self, camera, image_shape, device):
         if not self.enabled:
             return None, {}
+        if self.feedback_mode == "global":
+            h, w = int(image_shape[-2]), int(image_shape[-1])
+            weight = torch.ones((1, h, w), device=device, dtype=torch.float32)
+            return weight, {
+                "guided_region_count": 0,
+                "guided_region_pixels": int(h * w),
+                "guided_view": str(getattr(camera, "image_name", "")),
+            }
         if self.feedback_mode in {"contribution", "contribution_specific", "pixel"}:
             return self._make_pixel_weight_map(camera, image_shape, device)
         view_id = str(getattr(camera, "image_name", ""))

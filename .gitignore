@@ -28,8 +28,13 @@ tensorboard/
 __pycache__/
 *.pyc
 *.egg-info/
+build/
+*.so
+*.dll
+*.pyd
 .cache/
 .pytest_cache/
+.geoguardgs_merged_configs/
 
 # Heavy media
 *.mp4
