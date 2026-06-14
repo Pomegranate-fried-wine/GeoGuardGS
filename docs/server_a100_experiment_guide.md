@@ -450,7 +450,51 @@ python scripts/train.py --config configs/smoke/a100_da3_periodic_group_softpatch
 对于 DA3-only，正常现象是 `feedback_mode=global`，不要求 `signal_path`。
 对于 periodic group softpatch，50/100 iter smoke 会触发 controller，并在输出目录生成 `feedback_controller/iter_000050/`、`feedback_controller/iter_000100/`。
 
+Depth visualization robustness can be checked with:
+
+```bash
+python scripts/test_depth_visualization.py
+```
+
 ## 12.2 正式实验命令
+
+Before the full 30000-iteration run, first run the 5000-iteration A/B/C
+diagnostic comparison:
+
+```bash
+python scripts/launch_a100_experiments.py \
+  --configs \
+    configs/short_5000/a100_baseline_streetgs_5000.yaml \
+    configs/short_5000/a100_da3_only_5000.yaml \
+    configs/short_5000/a100_da3_periodic_group_softpatch_5000.yaml \
+  --gpus 0,1,2 \
+  --output-root outputs/a100_short_5000
+```
+
+Interpretation:
+
+- If A and B are stable but C drops sharply after a feedback trigger, inspect
+  `outputs/a100_short_5000/da3_periodic_group_softpatch/feedback_controller/iter_*/`.
+- If A is already poor, inspect the base StreetGS / five-camera / Waymo data setup.
+- If B is poor but A is stable, inspect DA3 structure loss strength and DA3 depth/edge reliability.
+- Use `periodic_eval/iter_XXXXXX/panel_manifest.json` and fixed-view panels to locate the first degradation step.
+
+To rerun from scratch, keep `resume: false` and remove or move the old output
+directory, for example:
+
+```bash
+mv outputs/a100_short_5000 outputs/a100_short_5000_old_$(date +%Y%m%d_%H%M%S)
+```
+
+To resume from checkpoints, set `resume: true` by launcher override:
+
+```bash
+python scripts/launch_a100_experiments.py \
+  --configs configs/short_5000/a100_da3_periodic_group_softpatch_5000.yaml \
+  --gpus 0 \
+  --output-root outputs/a100_short_5000 \
+  --resume
+```
 
 正式 30000 iter 使用：
 
@@ -477,6 +521,7 @@ python scripts/launch_a100_experiments.py \
 - `use_colmap=false`；
 - `filter_colmap=false`；
 - DA3-unsupervised 主线 `lambda_depth_lidar=0.0` 且 `use_lidar_depth=false`。
+- `train.save_visuals=false` disables legacy `log_images/`; fixed-view paper diagnostics use `periodic_eval/iter_XXXXXX/panels/`.
 
 ## 13. 结果收集
 

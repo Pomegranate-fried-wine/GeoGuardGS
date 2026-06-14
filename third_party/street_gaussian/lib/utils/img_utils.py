@@ -242,14 +242,25 @@ colors = np.array(colors, dtype=np.uint8).reshape(len(colors), 1, 1, 3)
 def visualize_depth_numpy(depth, minmax=None, cmap=cv2.COLORMAP_JET):
     """
     depth: (H, W)
-    """    
-    x = np.nan_to_num(depth) # change nan to 0
+    """
+    x = np.asarray(depth, dtype=np.float32)
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    valid = np.isfinite(x) & (x > 0)
     if minmax is None:
-        mi = np.min(x[x>0]) # get minimum positive depth (ignore background)
-        ma = np.max(x)
+        positive = x[valid]
+        if positive.size == 0:
+            empty = np.zeros((*x.shape, 3), dtype=np.uint8)
+            return empty, [0.0, 0.0]
+        mi = float(np.min(positive))
+        ma = float(np.max(positive))
     else:
         mi,ma = minmax
+        mi = float(mi)
+        ma = float(ma)
+    if ma <= mi:
+        ma = mi + 1e-8
     x = (x-mi)/(ma-mi+1e-8) # normalize to 0~1
+    x[~valid] = 0.0
     x = (255*x).astype(np.uint8)
     x_ = cv2.applyColorMap(x, cmap)
     return x_, [mi,ma]

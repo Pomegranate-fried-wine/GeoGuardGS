@@ -32,6 +32,41 @@ outputs/<exp_name>/
   final_eval/
 ```
 
+`log_images/` is only a lightweight optional training log controlled by
+`train.save_visuals` and `train.log_image_interval`. Paper figures and
+diagnostics should use `periodic_eval/` and `feedback_controller/`.
+
+Formal training should write fixed-view panels every 500 iterations:
+
+```text
+outputs/a100_main_experiments/<exp_name>/
+  periodic_eval/
+    iter_000500/
+      panel_manifest.json
+      assets/
+        iter_000500_cam0_<image_name>_gt_rgb.jpg
+        iter_000500_cam0_<image_name>_rendered_rgb.jpg
+        iter_000500_cam0_<image_name>_rendered_depth.jpg
+        iter_000500_cam0_<image_name>_da3_boundary_risk.jpg
+      panels/
+        iter_000500_cam0_<image_name>_comparison_panel.jpg
+```
+
+Each `panel_manifest.json` records the source view, `cam_id`, `image_name`,
+panel path, individual asset paths, PSNR, L1, depth finite/positive counts,
+depth min/max, accumulation statistics, and warnings such as PSNR drops, empty
+positive depth, or saturated accumulation.
+
+For the required A/B/C 5000-iteration diagnostic comparison, the same structure
+is written under:
+
+```text
+outputs/a100_short_5000/
+  baseline_streetgs/
+  da3_only/
+  da3_periodic_group_softpatch/
+```
+
 ## 论文证据包
 
 正式实验完成后运行：

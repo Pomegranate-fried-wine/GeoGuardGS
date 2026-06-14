@@ -1,0 +1,14 @@
+_BASE_: ../experiments/a100_baseline_streetgs.yaml
+exp_name: a100_baseline_streetgs_5000
+model_path: outputs/a100_short_5000/baseline_streetgs
+train:
+  iterations: 5000
+  test_iterations: [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]
+  save_iterations: [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]
+  checkpoint_iterations: [1000, 2000, 3000, 4000, 5000]
+  periodic_eval_enabled: true
+  periodic_eval_interval: 500
+  periodic_eval_max_views: 5
+  save_visuals: false
+  log_image_interval: 0
+resume: false

@@ -6,6 +6,7 @@ import json
 import os
 import numpy as np
 import torch
+import cv2
 from random import randint
 from lib.utils.loss_utils import l1_loss, l2_loss, psnr, ssim
 from lib.utils.img_utils import save_img_torch, visualize_depth_numpy
@@ -233,6 +234,286 @@ def _sky_scale_for_camera(optim_args, viewpoint_cam):
     return float(scales[cam_id])
 
 
+def _tensor_rgb_u8(tensor):
+    x = torch.clamp(tensor.detach(), 0.0, 1.0).cpu().numpy()
+    if x.ndim == 3 and x.shape[0] in (1, 3):
+        x = np.transpose(x, (1, 2, 0))
+    if x.ndim == 2:
+        x = np.repeat(x[..., None], 3, axis=-1)
+    if x.shape[-1] == 1:
+        x = np.repeat(x, 3, axis=-1)
+    return (x * 255.0).astype(np.uint8)
+
+
+def _put_title(image, title):
+    out = image.copy()
+    cv2.rectangle(out, (0, 0), (out.shape[1], 28), (0, 0, 0), -1)
+    cv2.putText(out, str(title), (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+    return out
+
+
+def _resize_like_panel(image, shape_hw):
+    h, w = shape_hw
+    if image.shape[:2] == (h, w):
+        return image
+    return cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
+
+
+def _depth_stats(depth_tensor):
+    x = depth_tensor.detach().cpu().numpy().astype(np.float32)
+    finite = np.isfinite(x)
+    positive = finite & (x > 0)
+    stats = {
+        "finite_depth_count": int(np.count_nonzero(finite)),
+        "positive_depth_count": int(np.count_nonzero(positive)),
+        "depth_min": None,
+        "depth_max": None,
+    }
+    vals = x[positive]
+    if vals.size:
+        stats["depth_min"] = float(np.min(vals))
+        stats["depth_max"] = float(np.max(vals))
+    return stats
+
+
+def _acc_stats(acc_tensor):
+    x = acc_tensor.detach().cpu().numpy().astype(np.float32)
+    finite = np.isfinite(x)
+    vals = x[finite]
+    if vals.size == 0:
+        return {"acc_min": None, "acc_max": None, "acc_mean": None, "acc_finite_count": 0}
+    return {
+        "acc_min": float(np.min(vals)),
+        "acc_max": float(np.max(vals)),
+        "acc_mean": float(np.mean(vals)),
+        "acc_finite_count": int(vals.size),
+    }
+
+
+def _append_jsonl(path, payload):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _select_eval_cameras(scene, train_args):
+    cameras = scene.getTrainCameras()
+    explicit = list(getattr(train_args, "periodic_eval_view_ids", []) or [])
+    selected = []
+    if explicit:
+        wanted = {str(v) for v in explicit}
+        selected = [cam for cam in cameras if str(getattr(cam, "image_name", "")) in wanted]
+    if not selected:
+        seen_cams = set()
+        for cam in cameras:
+            cam_id = int(getattr(cam, "meta", {}).get("cam", len(seen_cams)))
+            if cam_id in seen_cams:
+                continue
+            selected.append(cam)
+            seen_cams.add(cam_id)
+            if len(selected) >= int(getattr(train_args, "periodic_eval_max_views", 5)):
+                break
+    if not selected and cameras:
+        selected = cameras[: min(len(cameras), int(getattr(train_args, "periodic_eval_max_views", 5)))]
+    return selected
+
+
+def _safe_depth_color(depth_tensor):
+    try:
+        depth_np = np.squeeze(depth_tensor.detach().cpu().numpy())
+        depth_colored, _ = visualize_depth_numpy(depth_np)
+        return depth_colored[..., [2, 1, 0]]
+    except Exception as exc:
+        print(f"[Visual][WARN] depth visualization failed: {exc}")
+        shape = depth_tensor.shape[-2:]
+        return np.zeros((int(shape[0]), int(shape[1]), 3), dtype=np.uint8)
+
+
+def _edge_vis_from_depth(depth_tensor):
+    x = depth_tensor.detach().cpu().numpy().squeeze().astype(np.float32)
+    finite = np.isfinite(x)
+    valid = finite & (x > 0)
+    if not np.any(valid):
+        return np.zeros((*x.shape, 3), dtype=np.uint8)
+    filled = x.copy()
+    filled[~valid] = float(np.median(filled[valid]))
+    gx = cv2.Sobel(filled, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(filled, cv2.CV_32F, 0, 1, ksize=3)
+    grad = np.sqrt(gx * gx + gy * gy)
+    grad[~valid] = 0
+    if np.max(grad) > 0:
+        grad = grad / np.max(grad)
+    edge = (grad * 255).astype(np.uint8)
+    return cv2.applyColorMap(edge, cv2.COLORMAP_TURBO)
+
+
+def _mask_vis(mask_tensor, shape_hw):
+    if mask_tensor is None:
+        return np.zeros((shape_hw[0], shape_hw[1], 3), dtype=np.uint8)
+    x = mask_tensor.detach().cpu().numpy().squeeze()
+    if x.shape != tuple(shape_hw):
+        x = cv2.resize(x.astype(np.float32), (shape_hw[1], shape_hw[0]), interpolation=cv2.INTER_NEAREST)
+    out = np.zeros((shape_hw[0], shape_hw[1], 3), dtype=np.uint8)
+    out[x > 0] = (255, 64, 64)
+    return out
+
+
+def _write_panel(path, tiles):
+    rows = []
+    h, w = tiles[0][0][1].shape[:2]
+    for row in tiles:
+        row_imgs = [_resize_like_panel(_put_title(img, title), (h, w)) for title, img in row]
+        rows.append(np.concatenate(row_imgs, axis=1))
+    panel = np.concatenate(rows, axis=0)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cv2.imwrite(path, panel[..., ::-1])
+
+
+def _save_rgb_image(path, image):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cv2.imwrite(path, image[..., ::-1])
+    return path
+
+
+def _write_training_log_image(iteration, viewpoint_cam, gt_image, image, depth, acc, scene, renderer, train_args):
+    interval = int(getattr(train_args, "log_image_interval", 0) or 0)
+    if not bool(getattr(train_args, "save_visuals", False)) or interval <= 0 or iteration % interval != 0:
+        return
+    try:
+        depth_colored = _safe_depth_color(depth)
+        depth_colored = torch.from_numpy(depth_colored / 255.0).permute(2, 0, 1).float().cuda()
+        row0 = torch.cat([gt_image, image, depth_colored], dim=2)
+        acc_vis = acc.repeat(3, 1, 1)
+        with torch.no_grad():
+            render_pkg_obj = renderer.render_object(viewpoint_cam, scene.gaussians)
+            image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj["acc"]
+        acc_obj = acc_obj.repeat(3, 1, 1)
+        row1 = torch.cat([acc_vis, image_obj, acc_obj], dim=2)
+        image_to_show = torch.clamp(torch.cat([row0, row1], dim=1), 0.0, 1.0)
+        out_dir = os.path.join(cfg.model_path, "log_images")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{iteration}.jpg")
+        save_img_torch(image_to_show, out_path)
+        _append_jsonl(os.path.join(out_dir, "manifest.jsonl"), {
+            "iteration": int(iteration),
+            "cam_id": int(viewpoint_cam.meta.get("cam", -1)),
+            "image_name": str(getattr(viewpoint_cam, "image_name", "")),
+            "path": out_path,
+            **_depth_stats(depth),
+            **_acc_stats(acc),
+        })
+    except Exception as exc:
+        print(f"[Visual][WARN] log image failed at iter {iteration}: {exc}")
+
+
+def _write_periodic_eval(iteration, eval_cameras, scene, renderer, da3_bridge, guided_feedback, train_args, previous_stats):
+    if not bool(getattr(train_args, "periodic_eval_enabled", True)):
+        return
+    interval = int(getattr(train_args, "periodic_eval_interval", 500) or 0)
+    if interval <= 0 or iteration % interval != 0:
+        return
+    iter_dir = os.path.join(cfg.model_path, "periodic_eval", f"iter_{iteration:06d}")
+    panel_dir = os.path.join(iter_dir, "panels")
+    asset_dir = os.path.join(iter_dir, "assets")
+    os.makedirs(panel_dir, exist_ok=True)
+    os.makedirs(asset_dir, exist_ok=True)
+    manifest = {"iteration": int(iteration), "views": []}
+    for cam in eval_cameras:
+        try:
+            gt = cam.original_image.cuda(non_blocking=True) if not cam.original_image.is_cuda else cam.original_image
+            mask = cam.guidance["mask"].cuda(non_blocking=True).bool() if "mask" in cam.guidance else torch.ones_like(gt[0:1]).bool()
+            pkg = renderer.render(cam, scene.gaussians)
+            rgb, depth, acc = pkg["rgb"], pkg["depth"], pkg["acc"]
+            rgb_error = torch.clamp(torch.abs(rgb - gt) * 4.0, 0.0, 1.0)
+            l1_value = float(l1_loss(rgb, gt, mask).detach().item())
+            psnr_value = float(psnr(rgb, gt, mask).mean().detach().item())
+            depth_info = _depth_stats(depth)
+            acc_info = _acc_stats(acc)
+            h, w = int(rgb.shape[-2]), int(rgb.shape[-1])
+            rendered_depth = _safe_depth_color(depth)
+            da3_or_edge = _edge_vis_from_depth(depth)
+            if da3_bridge is not None:
+                try:
+                    da3_depth = da3_bridge(cam)["relative_depth"]
+                    da3_or_edge = _safe_depth_color(da3_depth)
+                except Exception as exc:
+                    print(f"[PeriodicEval][WARN] DA3 depth panel failed for {cam.image_name}: {exc}")
+            lidar_overlay = _mask_vis(cam.guidance.get("lidar_depth", None), (h, w)) if hasattr(cam, "guidance") else np.zeros((h, w, 3), dtype=np.uint8)
+            risk_vis = _edge_vis_from_depth(depth)
+            selected_vis = np.zeros((h, w, 3), dtype=np.uint8)
+            softpatch_vis = np.zeros((h, w, 3), dtype=np.uint8)
+            if guided_feedback.enabled:
+                weight_map, _ = guided_feedback.make_region_weight_map(cam, depth.shape, depth.device)
+                if weight_map is not None:
+                    selected_vis = _mask_vis(weight_map > 1.0, (h, w))
+                    softpatch_u8 = np.clip(weight_map.detach().cpu().numpy().squeeze(), 0, 4) * 60
+                    softpatch_vis = cv2.applyColorMap(softpatch_u8.astype(np.uint8), cv2.COLORMAP_TURBO)
+            acc_vis = _tensor_rgb_u8(acc.repeat(3, 1, 1))
+            contribution_vis = np.zeros((h, w, 3), dtype=np.uint8)
+            group_vis = selected_vis.copy()
+            rows = [
+                [("GT RGB", _tensor_rgb_u8(gt)), ("Rendered RGB", _tensor_rgb_u8(rgb)), ("RGB Error x4", _tensor_rgb_u8(rgb_error))],
+                [("Rendered Depth", rendered_depth), ("DA3 Depth / Edge", da3_or_edge), ("LiDAR Sparse Overlay", lidar_overlay)],
+                [("DA3 Boundary Risk", risk_vis), ("Selected Risk / Regions", selected_vis), ("Accumulation / Alpha", acc_vis)],
+            ]
+            if getattr(cfg.train.feedback_controller, "enabled", False):
+                rows.append([
+                    ("Contribution Top-K Overlay", contribution_vis),
+                    ("Responsible Group Overlay", group_vis),
+                    ("Active Softpatch Mask", softpatch_vis),
+                ])
+            cam_id = int(cam.meta.get("cam", -1))
+            image_name = str(getattr(cam, "image_name", "view")).replace(os.sep, "_")
+            stem = f"iter_{iteration:06d}_cam{cam_id}_{image_name}"
+            paths = {
+                "gt_rgb_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_gt_rgb.jpg"), _tensor_rgb_u8(gt)),
+                "rendered_rgb_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_rendered_rgb.jpg"), _tensor_rgb_u8(rgb)),
+                "rgb_error_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_rgb_error_x4.jpg"), _tensor_rgb_u8(rgb_error)),
+                "depth_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_rendered_depth.jpg"), rendered_depth),
+                "da3_depth_or_edge_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_da3_depth_or_edge.jpg"), da3_or_edge),
+                "lidar_sparse_overlay_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_lidar_sparse_overlay.jpg"), lidar_overlay),
+                "risk_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_da3_boundary_risk.jpg"), risk_vis),
+                "selected_risk_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_selected_risk_regions.jpg"), selected_vis),
+                "accumulation_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_accumulation.jpg"), acc_vis),
+                "softpatch_mask_path": _save_rgb_image(os.path.join(asset_dir, f"{stem}_active_softpatch_mask.jpg"), softpatch_vis),
+            }
+            panel_path = os.path.join(panel_dir, f"iter_{iteration:06d}_cam{cam_id}_{image_name}_comparison_panel.jpg")
+            _write_panel(panel_path, rows)
+            prev = previous_stats.get(image_name, {})
+            prev_psnr = prev.get("psnr")
+            warnings = []
+            if prev_psnr is not None and psnr_value < prev_psnr - float(getattr(train_args, "psnr_drop_warn_threshold", 5.0)):
+                warnings.append(f"psnr_drop_from_{prev_psnr:.3f}_to_{psnr_value:.3f}")
+            if depth_info["positive_depth_count"] == 0:
+                warnings.append("empty_positive_depth")
+            if acc_info["acc_mean"] is None or acc_info["acc_mean"] <= 1e-6 or acc_info["acc_mean"] >= 0.999:
+                warnings.append("acc_saturated_or_empty")
+            if warnings:
+                print(f"[PeriodicEval][WARN] iter={iteration} view={image_name}: {', '.join(warnings)}")
+            previous_stats[image_name] = {"psnr": psnr_value}
+            manifest["views"].append({
+                "cam_id": cam_id,
+                "image_name": image_name,
+                "panel_path": panel_path,
+                **paths,
+                "psnr": psnr_value,
+                "l1": l1_value,
+                "warnings": warnings,
+                **depth_info,
+                **acc_info,
+            })
+        except Exception as exc:
+            print(f"[PeriodicEval][WARN] failed at iter={iteration} view={getattr(cam, 'image_name', '')}: {exc}")
+            manifest["views"].append({
+                "cam_id": int(getattr(cam, "meta", {}).get("cam", -1)),
+                "image_name": str(getattr(cam, "image_name", "")),
+                "status": "failed",
+                "error": str(exc),
+            })
+    with open(os.path.join(iter_dir, "panel_manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+
 def _selected_bbox_from_trigger(trigger_dir, width, height):
     risk_dir = os.path.join(trigger_dir, "risk_stage")
     selected_files = [p for p in os.listdir(risk_dir)] if os.path.isdir(risk_dir) else []
@@ -389,6 +670,11 @@ def training():
     if guided_feedback.enabled and guided_feedback.use_da3_structure:
         da3_bridge = make_da3_bridge(cfg.geovit)
         print("[GuidedFeedback] DA3 boundary-structure feedback enabled")
+    periodic_eval_cameras = _select_eval_cameras(scene, training_args)
+    print("[PeriodicEval] fixed views: " + ", ".join(
+        f"cam{cam.meta.get('cam', '?')}:{getattr(cam, 'image_name', '')}" for cam in periodic_eval_cameras
+    ))
+    periodic_eval_previous_stats = {}
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
@@ -584,24 +870,28 @@ def training():
         
         iter_end.record()
                 
-        is_save_images = True
-        if is_save_images and (iteration % 1000 == 0):
-            # row0: gt_image, image, depth
-            # row1: acc, image_obj, acc_obj
-            depth_colored, _ = visualize_depth_numpy(depth.detach().cpu().numpy().squeeze(0))
-            depth_colored = depth_colored[..., [2, 1, 0]] / 255.
-            depth_colored = torch.from_numpy(depth_colored).permute(2, 0, 1).float().cuda()
-            row0 = torch.cat([gt_image, image, depth_colored], dim=2)
-            acc = acc.repeat(3, 1, 1)
-            with torch.no_grad():
-                render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, gaussians)
-                image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
-            acc_obj = acc_obj.repeat(3, 1, 1)
-            row1 = torch.cat([acc, image_obj, acc_obj], dim=2)
-            image_to_show = torch.cat([row0, row1], dim=1)
-            image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
-            os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
-            save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
+        _write_training_log_image(
+            iteration,
+            viewpoint_cam,
+            gt_image,
+            image,
+            depth,
+            acc,
+            scene,
+            gaussians_renderer,
+            training_args,
+        )
+        with torch.no_grad():
+            _write_periodic_eval(
+                iteration,
+                periodic_eval_cameras,
+                scene,
+                gaussians_renderer,
+                da3_bridge,
+                guided_feedback,
+                training_args,
+                periodic_eval_previous_stats,
+            )
         
         with torch.no_grad():
             

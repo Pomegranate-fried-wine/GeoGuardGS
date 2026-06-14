@@ -14,6 +14,7 @@ Official migration-safe entrypoints:
 - `build_paper_evidence_pack.py`: collect metrics, manifests, safety audits, repair summaries, and figure assets into `outputs/paper_evidence/` for paper writing.
 - `evaluate.py` / `evaluate_geometry_metrics.py`: evaluation launchers.
 - `render_periodic_panels.py`: periodic panel helper.
+- `test_depth_visualization.py`: smoke-test robust depth visualization on empty/invalid depth maps.
 
 Historical local research scripts are kept in `scripts/research_archive/` and
 may contain local defaults such as A5000 or p15 paths. They are not official

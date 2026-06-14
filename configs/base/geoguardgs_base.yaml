@@ -70,6 +70,15 @@ train:
   ]
   disable_structure_updates: false
   scalar_trace_path: metrics/train_loss_trace.csv
+  save_visuals: false
+  log_image_interval: 0
+  log_fixed_view: true
+  log_fixed_view_ids: []
+  periodic_eval_enabled: true
+  periodic_eval_interval: 500
+  periodic_eval_view_ids: []
+  periodic_eval_max_views: 5
+  psnr_drop_warn_threshold: 5.0
 
   guided_feedback:
     enabled: false
