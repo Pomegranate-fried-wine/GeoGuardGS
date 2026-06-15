@@ -342,8 +342,12 @@ def plot_eval_curves(eval_rows, out_dir, metric, ylabel, protocol="", title="", 
     ax.legend(fontsize=8)
     fig.tight_layout()
     prefix = f"{filename_prefix}_" if filename_prefix else ""
-    path = out_dir / f"{prefix}{metric}_curve.png"
-    fig.savefig(path)
+    stem = out_dir / f"{prefix}{metric}_curve"
+    path = stem.with_suffix(".png")
+    fig.savefig(path, dpi=300)
+    fig.savefig(stem.with_suffix(".svg"))
+    fig.savefig(stem.with_suffix(".pdf"))
+    fig.savefig(stem.with_suffix(".tiff"), dpi=600)
     plt.close(fig)
     return {"path": str(path), "status": "ok", "error": ""}
 
@@ -373,8 +377,12 @@ def plot_scalar_curves(scalar_rows, out_dir, metric, ylabel, every=100):
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()
-    path = out_dir / f"{metric}_curve.png"
-    fig.savefig(path)
+    stem = out_dir / f"{metric}_curve"
+    path = stem.with_suffix(".png")
+    fig.savefig(path, dpi=300)
+    fig.savefig(stem.with_suffix(".svg"))
+    fig.savefig(stem.with_suffix(".pdf"))
+    fig.savefig(stem.with_suffix(".tiff"), dpi=600)
     plt.close(fig)
     return {"path": str(path), "status": "ok", "error": "", "metric": metric}
 
@@ -405,8 +413,12 @@ def plot_feedback_timeline(feedback_rows, out_dir):
     ax.set_title("Feedback Trigger Timeline")
     ax.grid(True, axis="x", alpha=0.3)
     fig.tight_layout()
-    path = out_dir / "feedback_trigger_timeline.png"
-    fig.savefig(path)
+    stem = out_dir / "feedback_trigger_timeline"
+    path = stem.with_suffix(".png")
+    fig.savefig(path, dpi=300)
+    fig.savefig(stem.with_suffix(".svg"))
+    fig.savefig(stem.with_suffix(".pdf"))
+    fig.savefig(stem.with_suffix(".tiff"), dpi=600)
     plt.close(fig)
     return {"path": str(path), "status": "ok", "error": ""}
 
@@ -429,8 +441,12 @@ def plot_initialization_audit(init_rows, out_dir):
     ax.set_xticklabels(["No LiDAR init", "LiDAR init"])
     ax.set_title("Initialization Leakage Audit")
     fig.tight_layout()
-    path = out_dir / "initialization_audit.png"
-    fig.savefig(path)
+    stem = out_dir / "initialization_audit"
+    path = stem.with_suffix(".png")
+    fig.savefig(path, dpi=300)
+    fig.savefig(stem.with_suffix(".svg"))
+    fig.savefig(stem.with_suffix(".pdf"))
+    fig.savefig(stem.with_suffix(".tiff"), dpi=600)
     plt.close(fig)
     return {"path": str(path), "status": "ok", "error": ""}
 
@@ -558,11 +574,14 @@ def build_periodic_rgb_depth_comparisons(raw_root, out_dir, experiments, iterati
             out_path = out_dir / iteration / f"{iteration}_cam{cam_id}_{image_name}_rgb_depth_comparison.jpg"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             canvas.save(out_path, quality=92)
+            tiff_path = out_path.with_suffix(".tiff")
+            canvas.save(tiff_path, compression="tiff_lzw")
             generated.append({
                 "iteration": iteration,
                 "image_name": image_name,
                 "cam_id": cam_id,
                 "path": str(out_path),
+                "tiff_path": str(tiff_path),
                 "status": "ok",
             })
     return generated
