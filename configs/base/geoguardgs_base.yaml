@@ -10,8 +10,8 @@ resume: false
 
 data:
   type: Waymo
-  split_train: 1
-  split_test: -1
+  split_train: -1
+  split_test: 4
   white_background: false
   selected_frames: [0, 198]
   cameras: [0, 1, 2, 3, 4]

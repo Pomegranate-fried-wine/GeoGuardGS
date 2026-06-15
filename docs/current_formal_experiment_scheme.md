@@ -20,10 +20,12 @@ not be used as the main autonomous-driving street-scene results.
 | C | blocked until implemented | on | COLMAP-only, no LiDAR init | no | Strict no-LiDAR-init DA3-only full-scene test; requires non-LiDAR object initialization |
 | D | `configs/experiments/a100_da3_periodic_group_softpatch.yaml` | on | StreetGS-style COLMAP + LiDAR/object init | no | Main DA3 + periodic group softpatch feedback with vehicles retained |
 | E | blocked until implemented | on | COLMAP-only, no LiDAR init | no | Main DA3 + feedback strict no-LiDAR-init full-scene test; requires non-LiDAR object initialization |
+| PV-C | `configs/experiments/a100_pv_da3_feedback_obj.yaml` | on | COLMAP background + random-box object init | no | Pure-vision object-aware DA3+Feedback prototype/formal comparison |
 
 Use A as the baseline. Compare B/D against A to decide whether the method can
 replace LiDAR training supervision while preserving vehicles under the original
-StreetGS initialization protocol.
+StreetGS initialization protocol. Compare PV-C against D to quantify the cost
+and promise of removing LiDAR initialization while retaining object modeling.
 
 C/E are valid scientific questions, but they are not currently valid full-scene
 configs in this codebase: the existing strict no-LiDAR initialization path is

@@ -72,6 +72,7 @@ python scripts/final_evaluate_experiments.py \
     configs/experiments/a100_baseline_streetgs.yaml \
     configs/experiments/a100_da3_only.yaml \
     configs/experiments/a100_da3_periodic_group_softpatch.yaml \
+    configs/experiments/a100_pv_da3_feedback_obj.yaml \
   --output-root outputs/final_evaluation_full_scene_v2 \
   --loaded-iter 30000
 ```

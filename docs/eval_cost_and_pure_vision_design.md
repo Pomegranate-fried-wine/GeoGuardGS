@@ -122,7 +122,28 @@ Main open risks:
 Recommended short-term sequence:
 
 1. Run A/B/C formal full-scene experiments with LiDAR initialization.
-2. Run pure-vision smoke after A/B/C has started or completed:
+2. Add the PV-C formal group after the pure-vision smoke has confirmed that
+   vehicles remain visible:
+
+```bash
+python scripts/train.py --config configs/experiments/a100_pv_da3_feedback_obj.yaml
+```
+
+The recommended four formal groups are now:
+
+| Group | Config | Role |
+| --- | --- | --- |
+| A | `configs/experiments/a100_baseline_streetgs.yaml` | StreetGS baseline with LiDAR init and LiDAR supervision |
+| B | `configs/experiments/a100_da3_only.yaml` | DA3-only, LiDAR init, no LiDAR supervision |
+| C | `configs/experiments/a100_da3_periodic_group_softpatch.yaml` | DA3+Feedback, LiDAR init, no LiDAR supervision |
+| PV-C | `configs/experiments/a100_pv_da3_feedback_obj.yaml` | pure-vision object-aware DA3+Feedback |
+
+Formal configs now use `split_train=-1` and `split_test=4` through the base
+config. Runs already started from an older materialized config with
+`split_train=1` do not have a held-out test split and should be treated as
+engineering runs unless restarted.
+
+3. Pure-vision smoke commands remain useful for debugging:
 
 ```bash
 python scripts/check_closed_loop_config.py --config configs/experiments_pure_vision/a100_pv_baseline_colmap_obj.yaml
