@@ -696,3 +696,65 @@ At training startup the log must now contain lines like:
 
 If `torch.cuda.is_available=False`, training exits immediately with a clear
 CUDA setup error instead of silently continuing.
+
+## COLMAP initialization diagnostics
+
+Current A/B/C short_5000 runs intentionally keep:
+
+```yaml
+data.use_colmap: false
+data.filter_colmap: false
+data.initialization_note: lidar_pointcloud_initialization
+```
+
+This means training has no LiDAR loss in the DA3-unsupervised branch, but the
+initial point cloud can still come from Waymo LiDAR. For paper writing, keep
+these concepts separate:
+
+```text
+1. no LiDAR training supervision:
+   no LiDAR loss, selected-pixel label, or LiDAR risk source during training;
+   LiDAR pointcloud initialization may still be used.
+
+2. no LiDAR initialization:
+   initialization also avoids Waymo LiDAR pointcloud and uses COLMAP/image-only
+   or another non-LiDAR initializer.
+
+3. LiDAR-supervised reference:
+   LiDAR loss or LiDAR risk source is allowed as an upper-bound diagnostic.
+```
+
+To diagnose server COLMAP before enabling image-only initialization:
+
+```bash
+python scripts/check_colmap_environment.py
+python scripts/check_colmap_environment.py --config configs/smoke/a100_baseline_streetgs_colmap_smoke.yaml
+COLMAP_BIN=/data/hch/GeoGuardGS_runtime/tools/colmap/bin/colmap \
+  python scripts/check_colmap_environment.py --config configs/smoke/a100_baseline_streetgs_colmap_smoke.yaml
+```
+
+COLMAP binary priority:
+
+```text
+data.colmap_executable > COLMAP_BIN > PATH colmap
+```
+
+If the system COLMAP fails with `libfreeimage`, `libtiff`,
+`TIFFFieldDataType`, or `symbol lookup error`, use a conda/local COLMAP binary
+instead of `/usr/bin/colmap`.
+
+Baseline-only COLMAP configs are provided for isolated debugging:
+
+```text
+configs/smoke/a100_baseline_streetgs_colmap_smoke.yaml
+configs/short_5000/a100_baseline_streetgs_colmap_5000.yaml
+```
+
+Their outputs go under:
+
+```text
+outputs/a100_colmap_debug/
+```
+
+Do not replace the current no-COLMAP A/B/C short_5000 runs until the COLMAP
+smoke has passed data loading and initialization on the server.

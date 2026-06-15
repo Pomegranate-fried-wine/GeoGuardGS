@@ -6,8 +6,10 @@ import os
 import cv2
 import shutil
 import sys
+import subprocess
 sys.path.append(os.getcwd())
 import json
+from datetime import datetime
 
 from scipy.spatial.transform import Rotation as R
 from lib.config import cfg
@@ -16,6 +18,94 @@ from lib.utils.data_utils import get_val_frames
 from lib.utils.colmap_utils import read_extrinsics_binary, qvec2rotmat
 
 image_filename_to_cam = lambda x: int(x.split('/')[0].split('_')[1]) # cam_{cam_id}/{frame}.png
+
+
+COLMAP_LIBRARY_ERROR_TOKENS = (
+    "libfreeimage",
+    "libtiff",
+    "TIFFFieldDataType",
+    "symbol lookup error",
+)
+
+
+def _resolve_colmap_executable():
+    configured = cfg.data.get("colmap_executable", "")
+    if configured:
+        return configured
+    env_bin = os.environ.get("COLMAP_BIN", "")
+    if env_bin:
+        return env_bin
+    return "colmap"
+
+
+def _format_colmap_error(cmd, proc):
+    output = "\n".join(part for part in [proc.stdout, proc.stderr] if part)
+    lib_hint = ""
+    if any(token in output for token in COLMAP_LIBRARY_ERROR_TOKENS):
+        lib_hint = (
+            "\nLikely dynamic library issue: libfreeimage/libtiff mismatch. "
+            "Please set data.colmap_executable or COLMAP_BIN to a working "
+            "conda/local COLMAP binary instead of the system colmap."
+        )
+    return (
+        f"COLMAP command failed with exit code {proc.returncode}:\n"
+        f"{' '.join(cmd)}\n"
+        f"{output.strip()}{lib_hint}"
+    )
+
+
+def _run_colmap_command(colmap_executable, args):
+    cmd = [colmap_executable] + args
+    proc = subprocess.run(cmd, text=True, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(_format_colmap_error(cmd, proc))
+    return proc
+
+
+def _preflight_colmap(colmap_executable):
+    try:
+        _run_colmap_command(colmap_executable, ["-h"])
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"COLMAP executable not found: {colmap_executable}. "
+            "Set data.colmap_executable or COLMAP_BIN, or install colmap on PATH."
+        ) from exc
+    print(f"[COLMAP] using executable: {colmap_executable}")
+
+
+def _ensure_database_has_images(db_path):
+    if not os.path.exists(db_path):
+        raise RuntimeError(
+            "COLMAP failed before database.db was created. "
+            "Please check the COLMAP command output above."
+        )
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='images'")
+        if cursor.fetchone() is None:
+            raise RuntimeError(
+                "COLMAP failed before database images table was created. "
+                "Likely dynamic library issue: libfreeimage/libtiff mismatch. "
+                "Please set data.colmap_executable or COLMAP_BIN to a working COLMAP binary."
+            )
+        cursor.execute("SELECT COUNT(*) FROM images")
+        image_count = int(cursor.fetchone()[0])
+        if image_count == 0:
+            raise RuntimeError(
+                "COLMAP database images table exists but contains zero images. "
+                "Check image_path, mask_path, and COLMAP feature extraction output."
+            )
+    finally:
+        conn.close()
+
+
+def _isolate_failed_colmap_dir(colmap_dir):
+    if not os.path.exists(colmap_dir):
+        return None
+    failed_dir = f"{colmap_dir}_failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    shutil.move(colmap_dir, failed_dir)
+    return failed_dir
 
 def convert_filename(filename):
     # {frame}_{cam_id}.png -> cam_{cam_id}/{frame}.png
@@ -27,8 +117,20 @@ def run_colmap_waymo(result):
     model_path = cfg.model_path
     data_path = cfg.source_path
     colmap_dir = os.path.join(model_path, 'colmap')
+    colmap_executable = _resolve_colmap_executable()
+    _preflight_colmap(colmap_executable)
     os.makedirs(colmap_dir, exist_ok=True)
     print('running colmap, colmap dir: ', colmap_dir)
+    try:
+        _run_colmap_waymo_impl(result, colmap_dir, data_path, colmap_executable)
+    except Exception:
+        failed_dir = _isolate_failed_colmap_dir(colmap_dir)
+        if failed_dir:
+            print(f"[COLMAP][ERROR] isolated incomplete COLMAP output to {failed_dir}")
+        raise
+
+
+def _run_colmap_waymo_impl(result, colmap_dir, data_path, colmap_executable):
 
     unique_cams = sorted(list(set(result['cams'])))
     print('cameras: ', unique_cams)
@@ -109,14 +211,16 @@ def run_colmap_waymo(result):
             cv2.imwrite(new_mask_filename, flip_mask)
     
     # https://colmap.github.io/faq.html#mask-image-regions
-    os.system(f'colmap feature_extractor \
-            --ImageReader.mask_path {mask_images_dir} \
-            --ImageReader.camera_model SIMPLE_PINHOLE  \
-            --ImageReader.single_camera_per_folder 1 \
-            --database_path {colmap_dir}/database.db \
-            --image_path {train_images_dir} \
-            --SiftExtraction.use_gpu 1 \
-            --SiftExtraction.check_render_window 0 ') # <--- 添加这一行，注意上一行末尾要有反斜杠
+    _run_colmap_command(colmap_executable, [
+        "feature_extractor",
+        "--ImageReader.mask_path", mask_images_dir,
+        "--ImageReader.camera_model", "SIMPLE_PINHOLE",
+        "--ImageReader.single_camera_per_folder", "1",
+        "--database_path", f"{colmap_dir}/database.db",
+        "--image_path", train_images_dir,
+        "--SiftExtraction.use_gpu", "1",
+        "--SiftExtraction.check_render_window", "0",
+    ])
 
     # load intrinsic
     camera_infos = dict()
@@ -134,6 +238,7 @@ def run_colmap_waymo(result):
 
     # load id_names from database
     db = f'{colmap_dir}/database.db'
+    _ensure_database_has_images(db)
     conn = sqlite3.connect(db)
     c = conn.cursor()
     c.execute('SELECT * FROM images')
@@ -202,6 +307,7 @@ def run_colmap_waymo(result):
 
     # update database
     db = f'{colmap_dir}/database.db'
+    _ensure_database_has_images(db)
     conn = sqlite3.connect(db)
     c = conn.cursor()
     c.execute('SELECT * FROM images')
@@ -225,7 +331,7 @@ def run_colmap_waymo(result):
 
     # create points3D.txt
     points3D_fn = os.path.join(model_dir, 'points3D.txt')
-    os.system(f'touch {points3D_fn}')
+    open(points3D_fn, 'a').close()
     
     # create rid ba config
     cam_rigid = dict()
@@ -258,45 +364,51 @@ def run_colmap_waymo(result):
     with open(rigid_config_path, "w+") as f:
         json.dump([cam_rigid], f, indent=4)   
 
-    os.system(f'colmap exhaustive_matcher \
-                --database_path {colmap_dir}/database.db \
-                --SiftMatching.use_gpu 1 ')
+    _run_colmap_command(colmap_executable, [
+        "exhaustive_matcher",
+        "--database_path", f"{colmap_dir}/database.db",
+        "--SiftMatching.use_gpu", "1",
+    ])
 
     triangulated_dir = os.path.join(colmap_dir, 'triangulated/sparse/model')
     os.makedirs(triangulated_dir, exist_ok=True)
-    os.system(f'colmap point_triangulator \
-        --database_path {colmap_dir}/database.db \
-        --image_path {train_images_dir} \
-        --input_path {model_dir} \
-        --output_path {triangulated_dir} \
-        --Mapper.ba_refine_focal_length 0 \
-        --Mapper.ba_refine_principal_point 0 \
-        --Mapper.max_extra_param 0 \
-        --clear_points 0 \
-        --Mapper.ba_global_max_num_iterations 30 \
-        --Mapper.filter_max_reproj_error 4 \
-        --Mapper.filter_min_tri_angle 0.5 \
-        --Mapper.tri_min_angle 0.5 \
-        --Mapper.tri_ignore_two_view_tracks 1 \
-        --Mapper.tri_complete_max_reproj_error 4 \
-        --Mapper.tri_continue_max_angle_error 4')
+    _run_colmap_command(colmap_executable, [
+        "point_triangulator",
+        "--database_path", f"{colmap_dir}/database.db",
+        "--image_path", train_images_dir,
+        "--input_path", model_dir,
+        "--output_path", triangulated_dir,
+        "--Mapper.ba_refine_focal_length", "0",
+        "--Mapper.ba_refine_principal_point", "0",
+        "--Mapper.max_extra_param", "0",
+        "--clear_points", "0",
+        "--Mapper.ba_global_max_num_iterations", "30",
+        "--Mapper.filter_max_reproj_error", "4",
+        "--Mapper.filter_min_tri_angle", "0.5",
+        "--Mapper.tri_min_angle", "0.5",
+        "--Mapper.tri_ignore_two_view_tracks", "1",
+        "--Mapper.tri_complete_max_reproj_error", "4",
+        "--Mapper.tri_continue_max_angle_error", "4",
+    ])
     
     if cfg.data.use_colmap_pose:
         # May lead to unstable results when refining relative poses
-        os.system(f'colmap rig_bundle_adjuster \
-                --input_path {triangulated_dir} \
-                --output_path {triangulated_dir} \
-                --rig_config_path {rigid_config_path} \
-                --estimate_rig_relative_poses 0 \
-                --RigBundleAdjustment.refine_relative_poses 1 \
-                --BundleAdjustment.max_num_iterations 50 \
-                --BundleAdjustment.refine_focal_length 0 \
-                --BundleAdjustment.refine_principal_point 0 \
-                --BundleAdjustment.refine_extra_params 0')
+        _run_colmap_command(colmap_executable, [
+            "rig_bundle_adjuster",
+            "--input_path", triangulated_dir,
+            "--output_path", triangulated_dir,
+            "--rig_config_path", rigid_config_path,
+            "--estimate_rig_relative_poses", "0",
+            "--RigBundleAdjustment.refine_relative_poses", "1",
+            "--BundleAdjustment.max_num_iterations", "50",
+            "--BundleAdjustment.refine_focal_length", "0",
+            "--BundleAdjustment.refine_principal_point", "0",
+            "--BundleAdjustment.refine_extra_params", "0",
+        ])
 
-    os.system(f'rm -rf {train_images_dir}')
-    os.system(f'rm -rf {test_images_dir}')  
-    os.system(f'rm -rf {mask_images_dir}')
+    shutil.rmtree(train_images_dir, ignore_errors=True)
+    shutil.rmtree(test_images_dir, ignore_errors=True)
+    shutil.rmtree(mask_images_dir, ignore_errors=True)
     
 if __name__ == '__main__':
     run_colmap_waymo(result=None)

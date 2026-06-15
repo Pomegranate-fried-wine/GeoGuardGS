@@ -1,0 +1,22 @@
+_BASE_: ../experiments/a100_baseline_streetgs.yaml
+exp_name: a100_baseline_streetgs_colmap_smoke
+model_path: outputs/a100_colmap_debug/baseline_streetgs_colmap_smoke
+data:
+  selected_frames: [0, 2]
+  cameras: [0, 1, 2]
+  use_colmap: true
+  filter_colmap: true
+  use_colmap_pose: false
+  colmap_executable: ""
+  initialization_note: colmap_image_only_initialization
+train:
+  iterations: 100
+  test_iterations: [50, 100]
+  save_iterations: [100]
+  checkpoint_iterations: [100]
+  periodic_eval_enabled: true
+  periodic_eval_interval: 50
+  periodic_eval_max_views: 3
+  save_visuals: false
+  log_image_interval: 0
+resume: false

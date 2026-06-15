@@ -19,6 +19,8 @@ data:
   use_colmap: false
   filter_colmap: false
   use_colmap_pose: false
+  colmap_executable: ""
+  initialization_note: lidar_pointcloud_initialization
   shuffle: true
   eval: true
   images: images

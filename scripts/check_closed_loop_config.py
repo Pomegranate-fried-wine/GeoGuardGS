@@ -67,6 +67,7 @@ def main():
     allow_shrink = bool(get(cfg, "train.gaussian_control.allow_real_shrink", False))
     cameras = _as_int_list(get(cfg, "data.cameras", []))
     lambda_sky_scale = get(cfg, "optim.lambda_sky_scale", [])
+    initialization_note = get(cfg, "data.initialization_note", "")
 
     if supervision == "da3_unsupervised":
         checks.append(("da3_no_lidar_loss", not uses_lidar and lambda_lidar == 0.0))
@@ -96,6 +97,9 @@ def main():
             "lambda_depth_lidar": lambda_lidar,
             "cameras": cameras,
             "lambda_sky_scale_length": len(lambda_sky_scale) if isinstance(lambda_sky_scale, list) else None,
+            "initialization_note": initialization_note,
+            "use_colmap": bool(get(cfg, "data.use_colmap", False)),
+            "filter_colmap": bool(get(cfg, "data.filter_colmap", False)),
         },
     }
     if "lambda_sky_scale_covers_cameras" in failed:
