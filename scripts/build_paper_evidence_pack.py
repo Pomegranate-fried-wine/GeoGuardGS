@@ -524,7 +524,7 @@ def main():
         "missing_evidence_count": len(missing_rows),
         "notes": [
             "Metrics are copied or summarized only from existing run outputs.",
-            "Training-time eval_summary.csv is sampled periodic diagnostic eval, not the paper-grade main result.",
+            "Training-time eval_summary.csv is periodic full-split training eval after the 1000-iteration protocol update; final_full_evaluation_summary.csv remains the paper-grade main result.",
             "Paper main results should use final_full_evaluation_summary.csv when available.",
             "DA3-unsupervised paper claims should require uses_lidar_supervision=false and uses_lidar_selected_pixels=false in safety/feedback tables.",
             "No-LiDAR initialization claims should require uses_lidar_initialization=false in initialization_summary.csv.",
@@ -542,7 +542,7 @@ def main():
         "- `tables/main_final_metrics.csv`: final/global experiment metrics.\n"
         "- `tables/final_full_evaluation_summary.csv`: paper-grade full final evaluation summary when available.\n"
         "- `tables/initialization_summary.csv`: initialization source and LiDAR-init leakage audit.\n"
-        "- `tables/eval_summary.csv`: sampled periodic diagnostic training evaluation mean/median/outlier summary.\n"
+        "- `tables/eval_summary.csv`: periodic full-split training evaluation mean/median/outlier summary.\n"
         "- `tables/eval_latest_per_view.csv`: latest per-view evaluation diagnostics.\n"
         "- `tables/train_scalar_trace.csv`: per-iteration training losses and diagnostic scalars.\n"
         "- `tables/region_lidar_geometry_metrics.csv`: region-local geometry metrics with `valid_lidar_count` and confidence.\n"

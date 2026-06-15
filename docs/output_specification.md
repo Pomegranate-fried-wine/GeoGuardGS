@@ -36,7 +36,8 @@ outputs/<exp_name>/
 `train.save_visuals` and `train.log_image_interval`. Paper figures and
 diagnostics should use `periodic_eval/` and `feedback_controller/`.
 
-Formal training should write fixed-view panels every 500 iterations:
+Formal full-scene v2 training should write fixed-view panels every 1000
+iterations:
 
 ```text
 outputs/a100_main_experiments/<exp_name>/
@@ -167,7 +168,7 @@ python scripts/build_paper_training_gallery.py \
   --copy-assets
 ```
 
-This indexes and copies the every-500-iteration `periodic_eval` panels by
+This indexes and copies the every-1000-iteration `periodic_eval` panels by
 `iteration + cam_id + image_name`, so the same selected frame/view can be
 compared directly across experiment groups.
 
@@ -202,6 +203,6 @@ Required outputs:
 - `outputs/paper_results_full_scene_v2/training_gallery/index.html`
 - `outputs/paper_results_full_scene_v2/training_gallery/training_gallery_index.csv`
 
-Training defaults now save 15 fixed views every 500 iterations: 5 cameras x 3
+Training defaults now save 15 fixed views every 1000 iterations: 5 cameras x 3
 frames. Set `train.periodic_eval_view_ids` only when manually pinning exact
 image names.

@@ -103,7 +103,7 @@ Required outputs:
    present, and LiDAR depth loss when present.
 2. Fixed-view RGB/depth panels in
    `outputs/paper_results_full_scene_v2/training_gallery/`. Training now
-   defaults to 15 fixed views, 5 cameras x 3 frames, saved every 500
+   defaults to 15 fixed views, 5 cameras x 3 frames, saved every 1000
    iterations through `periodic_eval`.
 3. Audit and metric tables in `outputs/paper_evidence_full_scene_v2/tables/`
    and compact paper tables in `outputs/paper_results_full_scene_v2/tables/`.

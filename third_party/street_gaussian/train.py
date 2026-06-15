@@ -1278,11 +1278,11 @@ def training_report(tb_writer, iteration, scalar_stats, tensor_stats, testing_it
             print('Failed to write to tensorboard')
             
             
-    # Report test and samples of training set
+    # Report full train/test splits for paper-grade training curves.
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test/test_view', 'cameras' : scene.getTestCameras()},
-                              {'name': 'test/train_view', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
+                              {'name': 'test/train_view', 'cameras' : scene.getTrainCameras()})
 
         per_view_rows = []
         for config in validation_configs:

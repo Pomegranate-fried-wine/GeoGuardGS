@@ -10,28 +10,28 @@ paths:
 2. `_write_periodic_eval()` writes fixed-view visual panels under
    `periodic_eval/iter_XXXXXX/`.
 
-`training_report()` evaluates:
+`training_report()` now evaluates every configured `train.test_iterations`
+entry, which is every 1000 iterations in the full-scene base config:
 
 - `test/test_view`: `scene.getTestCameras()`, i.e. the dataset test split.
-- `test/train_view`: five sampled training cameras:
-  `scene.getTrainCameras()[idx % len(train)]` for `idx in range(5, 30, 5)`.
+- `test/train_view`: the full `scene.getTrainCameras()` split.
 
-Therefore `test/train_view` is not the full training split. It is a sampled
-training-view diagnostic. `eval_summary.csv` stores mean/median/min/max L1 and
-PSNR over those evaluated views for each training checkpoint. The matching
+Therefore the new training-time curve source is full split evaluation at 1000
+iteration cadence. `eval_summary.csv` stores mean/median/min/max L1 and PSNR
+over those evaluated views for each training checkpoint. The matching
 `eval_iter_XXXXXX_per_view.csv` stores per-view diagnostics for that iteration,
 including camera id, image name, valid pixels, render/GT statistics,
 accumulation/depth statistics, and warnings.
 
 `_write_periodic_eval()` is a visual diagnostic. It now defaults to 15 fixed
-views, 5 cameras x 3 frames, and saves comparison panels every 500 iterations.
+views, 5 cameras x 3 frames, and saves comparison panels every 1000 iterations.
 It is not a full split metric.
 
 ## Why current PSNR curves can shake
 
-The existing `paper_results` PSNR/L1 curves are built from
-`metrics/eval_summary.csv`. This means they reflect sampled periodic diagnostic
-evaluation rather than paper-grade full evaluation. They can shake because:
+Older `paper_results` PSNR/L1 curves were built from
+`metrics/eval_summary.csv` when `test/train_view` contained only five sampled
+training views. Those older curves can shake because:
 
 - `test/train_view` contains only five training views;
 - `test/test_view` may be empty or much smaller depending on `data.split_test`;
@@ -39,8 +39,9 @@ evaluation rather than paper-grade full evaluation. They can shake because:
   sample;
 - train-time eval is interleaved with checkpoint/save/densification events.
 
-These curves are useful for training dynamics and failure diagnosis, but they
-must not be presented as the main quantitative paper result.
+After the 1000-iteration full-split update, new curves are much more rigorous
+and can be used as training-dynamics figures. The main quantitative paper table
+should still use final full evaluation at the chosen checkpoint.
 
 ## Original Street Gaussians reference
 
@@ -97,4 +98,5 @@ Required scopes:
 - `background_region`: valid pixels outside object masks.
 
 Paper evidence scripts now prefer `final_full_evaluation_summary.csv` for main
-tables and treat `eval_summary.csv` as `sampled_periodic_diagnostic_eval`.
+tables and treat new `eval_summary.csv` rows as
+`periodic_full_split_training_eval`.
