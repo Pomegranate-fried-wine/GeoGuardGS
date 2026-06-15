@@ -11,6 +11,7 @@ import cv2
 import sys
 import copy
 import shutil
+import json
 sys.path.append(os.getcwd())
 
 def readWaymoFullInfo(path, images='images', split_train=-1, split_test=-1, **kwargs):
@@ -50,6 +51,22 @@ def readWaymoFullInfo(path, images='images', split_train=-1, split_test=-1, **kw
         build_pointcloud=build_pointcloud,
         cameras=cfg.data.get('cameras', [0, 1, 2]),
     )
+    init_manifest_path = os.path.join(cfg.model_path, 'input_ply', 'initialization_manifest.json')
+    init_manifest = {}
+    if os.path.exists(init_manifest_path):
+        with open(init_manifest_path, "r", encoding="utf-8") as f:
+            init_manifest = json.load(f)
+    elif cfg.data.get("require_no_lidar_initialization", False) and not build_pointcloud:
+        raise RuntimeError(
+            "No-LiDAR initialization is required, but an existing input_ply has no "
+            "initialization_manifest.json. Regenerate the pointcloud with COLMAP "
+            "or remove the stale input_ply directory."
+        )
+    if cfg.data.get("require_no_lidar_initialization", False) and init_manifest.get("uses_lidar_initialization", False):
+        raise RuntimeError(
+            "No-LiDAR initialization is required, but input_ply/initialization_manifest.json "
+            "reports uses_lidar_initialization=true. Do not reuse LiDAR-init pointclouds for no-LiDAR experiments."
+        )
 
     exts = output['exts']
     ixts = output['ixts']
@@ -77,6 +94,7 @@ def readWaymoFullInfo(path, images='images', split_train=-1, split_test=-1, **kw
     scene_metadata['num_images'] = len(exts)
     scene_metadata['num_cams'] = len(cfg.data.cameras)
     scene_metadata['num_frames'] = num_frames
+    scene_metadata['initialization_manifest'] = init_manifest
     
     camera_timestamps = dict()
     for cam in cfg.data.get('cameras', [0, 1, 2]):

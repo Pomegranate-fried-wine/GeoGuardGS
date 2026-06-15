@@ -222,6 +222,8 @@ cfg.data.use_mono_normal = False
 cfg.data.use_colmap = True
 cfg.data.colmap_executable = ""
 cfg.data.initialization_note = ""
+cfg.data.allow_lidar_initialization = True
+cfg.data.require_no_lidar_initialization = False
 # data.load_pcd_from: Load the initialization point cloud from a previous experiment without generation.
 # data.extent: radius of the scene, we recommend 10 - 20 meters.
 # data.sphere_scale: Scale the sphere radius by this factor.

@@ -1,6 +1,16 @@
 _BASE_: ../base/geoguardgs_base.yaml
 exp_name: a100_baseline_streetgs
 model_path: outputs/a100_main_experiments/baseline_streetgs
+data:
+  use_colmap: true
+  filter_colmap: true
+  allow_lidar_initialization: false
+  require_no_lidar_initialization: true
+  initialization_note: colmap_image_only_initialization
+model:
+  nsg:
+    include_obj: false
+    include_sky: false
 train:
   guided_feedback:
     enabled: false

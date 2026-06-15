@@ -1,6 +1,15 @@
 _BASE_: ../experiments/a100_baseline_streetgs.yaml
 exp_name: a100_baseline_streetgs_5000
 model_path: outputs/a100_short_5000/baseline_streetgs
+data:
+  use_colmap: false
+  filter_colmap: false
+  allow_lidar_initialization: true
+  require_no_lidar_initialization: false
+  initialization_note: lidar_pointcloud_initialization_debug
+model:
+  nsg:
+    include_obj: true
 train:
   iterations: 5000
   test_iterations: [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]

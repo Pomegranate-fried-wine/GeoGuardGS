@@ -73,6 +73,33 @@ def _preflight_colmap(colmap_executable):
     print(f"[COLMAP] using executable: {colmap_executable}")
 
 
+def _colmap_help_text(colmap_executable, command):
+    try:
+        proc = _run_colmap_command(colmap_executable, [command, "-h"])
+    except RuntimeError as exc:
+        print(f"[COLMAP][WARN] failed to query '{command} -h': {exc}")
+        return ""
+    return "\n".join(part for part in [proc.stdout, proc.stderr] if part)
+
+
+def _feature_extractor_args(colmap_executable, colmap_dir, mask_images_dir, train_images_dir):
+    args = [
+        "feature_extractor",
+        "--ImageReader.mask_path", mask_images_dir,
+        "--ImageReader.camera_model", "SIMPLE_PINHOLE",
+        "--ImageReader.single_camera_per_folder", "1",
+        "--database_path", f"{colmap_dir}/database.db",
+        "--image_path", train_images_dir,
+        "--SiftExtraction.use_gpu", "1",
+    ]
+    help_text = _colmap_help_text(colmap_executable, "feature_extractor")
+    if "SiftExtraction.check_render_window" in help_text:
+        args.extend(["--SiftExtraction.check_render_window", "0"])
+    else:
+        print("[COLMAP] feature_extractor does not support SiftExtraction.check_render_window; skipping option.")
+    return args
+
+
 def _ensure_database_has_images(db_path):
     if not os.path.exists(db_path):
         raise RuntimeError(
@@ -211,16 +238,10 @@ def _run_colmap_waymo_impl(result, colmap_dir, data_path, colmap_executable):
             cv2.imwrite(new_mask_filename, flip_mask)
     
     # https://colmap.github.io/faq.html#mask-image-regions
-    _run_colmap_command(colmap_executable, [
-        "feature_extractor",
-        "--ImageReader.mask_path", mask_images_dir,
-        "--ImageReader.camera_model", "SIMPLE_PINHOLE",
-        "--ImageReader.single_camera_per_folder", "1",
-        "--database_path", f"{colmap_dir}/database.db",
-        "--image_path", train_images_dir,
-        "--SiftExtraction.use_gpu", "1",
-        "--SiftExtraction.check_render_window", "0",
-    ])
+    _run_colmap_command(
+        colmap_executable,
+        _feature_extractor_args(colmap_executable, colmap_dir, mask_images_dir, train_images_dir),
+    )
 
     # load intrinsic
     camera_infos = dict()

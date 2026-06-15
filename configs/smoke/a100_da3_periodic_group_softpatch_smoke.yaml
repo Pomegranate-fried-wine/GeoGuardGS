@@ -4,6 +4,12 @@ data:
   cameras: [0, 1, 2]
   use_colmap: false
   filter_colmap: false
+  allow_lidar_initialization: true
+  require_no_lidar_initialization: false
+  initialization_note: lidar_pointcloud_initialization_debug
+model:
+  nsg:
+    include_obj: true
 train:
   iterations: 100
   test_iterations: [50, 100]

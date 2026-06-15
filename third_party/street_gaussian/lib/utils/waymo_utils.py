@@ -479,6 +479,20 @@ def generate_dataparser_outputs(
         print('build point cloud')
         pointcloud_dir = os.path.join(cfg.model_path, 'input_ply')
         os.makedirs(pointcloud_dir, exist_ok=True)
+        allow_lidar_initialization = bool(cfg.data.get('allow_lidar_initialization', True))
+        require_no_lidar_initialization = bool(cfg.data.get('require_no_lidar_initialization', False))
+        colmap_binary = cfg.data.get("colmap_executable", "") or os.environ.get("COLMAP_BIN", "") or "PATH:colmap"
+        initialization_manifest = {
+            "uses_lidar_training_supervision": bool(cfg.data.get("uses_lidar_training_supervision", False)),
+            "uses_lidar_initialization": False,
+            "initialization_source": "colmap_sfm" if use_colmap and not allow_lidar_initialization else "lidar_pointcloud",
+            "pointcloud_source": "colmap" if use_colmap and not allow_lidar_initialization else "lidar",
+            "colmap_binary": colmap_binary,
+            "colmap_point_count": 0,
+            "lidar_point_count_used_for_init": 0,
+            "allow_lidar_initialization": allow_lidar_initialization,
+            "require_no_lidar_initialization": require_no_lidar_initialization,
+        }
         
         points_xyz_dict = dict()
         points_rgb_dict = dict()
@@ -497,8 +511,55 @@ def generate_dataparser_outputs(
             print('No colmap pointcloud')
             points_colmap_xyz = np.empty((0, 3), dtype=np.float32)
             points_colmap_rgb = np.empty((0, 3), dtype=np.float32)
+
+        if use_colmap and cfg.data.filter_colmap and points_colmap_xyz.shape[0] > 0:
+            points_colmap_mask = np.ones(points_colmap_xyz.shape[0], dtype=np.bool_)
+            for i, ext in enumerate(exts):
+                camera_position = c2ws[i][:3, 3]
+                radius = np.linalg.norm(points_colmap_xyz - camera_position, axis=-1)
+                mask = np.logical_or(radius < cfg.data.get('extent', 10), points_colmap_xyz[:, 2] < camera_position[2])
+                points_colmap_mask = np.logical_and(points_colmap_mask, ~mask)
+            points_colmap_xyz = points_colmap_xyz[points_colmap_mask]
+            points_colmap_rgb = points_colmap_rgb[points_colmap_mask]
+        initialization_manifest["colmap_point_count"] = int(points_colmap_xyz.shape[0])
+        if require_no_lidar_initialization and allow_lidar_initialization:
+            raise RuntimeError(
+                "Invalid no-LiDAR configuration: require_no_lidar_initialization=true "
+                "but allow_lidar_initialization=true."
+            )
+        if not allow_lidar_initialization:
+            if not use_colmap or points_colmap_xyz.shape[0] == 0:
+                raise RuntimeError(
+                    "No-LiDAR initialization requires a non-empty COLMAP/SfM pointcloud. "
+                    "Set data.use_colmap=true, data.filter_colmap=true, and provide a working COLMAP binary."
+                )
+            print('initialize from colmap pointcloud only; LiDAR pointcloud initialization disabled')
+            points_xyz_dict['lidar'] = np.empty((0, 3), dtype=np.float32)
+            points_rgb_dict['lidar'] = np.empty((0, 3), dtype=np.float32)
+            points_xyz_dict['colmap'] = points_colmap_xyz
+            points_rgb_dict['colmap'] = points_colmap_rgb
+            points_xyz_dict['bkgd'] = points_colmap_xyz
+            points_rgb_dict['bkgd'] = points_colmap_rgb
+            result['points_xyz_dict'] = points_xyz_dict
+            result['points_rgb_dict'] = points_rgb_dict
+            with open(os.path.join(pointcloud_dir, "initialization_manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(initialization_manifest, f, indent=2, ensure_ascii=False)
+            for k in points_xyz_dict.keys():
+                points_xyz = points_xyz_dict[k]
+                points_rgb = points_rgb_dict[k]
+                ply_path = os.path.join(pointcloud_dir, f'points3D_{k}.ply')
+                if len(points_xyz) > 0:
+                    storePly(ply_path, points_xyz, points_rgb)
+                    print(f'saving pointcloud for {k}, number of initial points is {points_xyz.shape}')
+            return result
                      
         print('initialize from lidar pointcloud')
+        initialization_manifest["uses_lidar_initialization"] = True
+        if require_no_lidar_initialization:
+            raise RuntimeError(
+                "No-LiDAR initialization requested, but code path is about to read Waymo pointcloud.npz. "
+                "Set data.allow_lidar_initialization=false and use COLMAP initialization."
+            )
         pointcloud_path = os.path.join(datadir, 'pointcloud.npz')
         pts3d_dict = np.load(pointcloud_path, allow_pickle=True)['pointcloud'].item()
         pts2d_dict = np.load(pointcloud_path, allow_pickle=True)['camera_projection'].item()
@@ -651,6 +712,10 @@ def generate_dataparser_outputs(
             
         result['points_xyz_dict'] = points_xyz_dict
         result['points_rgb_dict'] = points_rgb_dict
+        initialization_manifest["lidar_point_count_used_for_init"] = int(points_lidar_xyz.shape[0])
+        initialization_manifest["colmap_point_count"] = int(points_colmap_xyz.shape[0])
+        with open(os.path.join(pointcloud_dir, "initialization_manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(initialization_manifest, f, indent=2, ensure_ascii=False)
 
         # Sample sky point cloud 
         # if num_cameras < 3:     

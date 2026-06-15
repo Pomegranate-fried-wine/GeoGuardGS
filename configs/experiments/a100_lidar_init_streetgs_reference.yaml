@@ -1,0 +1,25 @@
+_BASE_: ../base/geoguardgs_base.yaml
+exp_name: a100_lidar_init_streetgs_reference
+model_path: outputs/a100_main_experiments/lidar_init_streetgs_reference
+data:
+  use_colmap: false
+  filter_colmap: false
+  allow_lidar_initialization: true
+  require_no_lidar_initialization: false
+  initialization_note: lidar_pointcloud_initialization_reference
+model:
+  nsg:
+    include_obj: true
+train:
+  guided_feedback:
+    enabled: false
+    use_lidar_depth: false
+    use_da3_structure: false
+  feedback_controller:
+    enabled: false
+    mode: "off"
+  gaussian_control:
+    enabled: false
+    control_mode: "off"
+optim:
+  lambda_depth_lidar: 0.0

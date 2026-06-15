@@ -7,6 +7,12 @@ data:
   use_colmap_pose: false
   colmap_executable: ""
   initialization_note: colmap_image_only_initialization
+  allow_lidar_initialization: false
+  require_no_lidar_initialization: true
+model:
+  nsg:
+    include_obj: false
+    include_sky: false
 train:
   iterations: 5000
   test_iterations: [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000]

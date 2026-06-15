@@ -15,10 +15,14 @@ from pathlib import Path
 
 EXPERIMENT_ORDER = [
     "baseline_streetgs",
+    "baseline_streetgs_colmap_5000",
     "da3_only",
+    "da3_only_colmap_5000",
     "da3_periodic_group_softpatch",
+    "da3_periodic_group_softpatch_colmap_5000",
     "da3_periodic_group_softpatch_opacity_reg",
     "da3_periodic_group_softpatch_opacity_decay",
+    "lidar_init_streetgs_reference",
     "lidar_supervised_reference",
     "hybrid_reference",
 ]
@@ -141,6 +145,55 @@ def collect_final_metrics(exp_dir):
     return row
 
 
+def collect_eval_rows(exp_name, exp_dir):
+    rows = []
+    summary_path = exp_dir / "metrics" / "eval_summary.csv"
+    if summary_path.exists():
+        for row in read_csv_rows(summary_path):
+            rows.append({"experiment": exp_name, "source": str(summary_path), **row})
+    return rows
+
+
+def collect_latest_per_view_rows(exp_name, exp_dir):
+    latest = latest_file(list((exp_dir / "metrics").glob("eval_iter_*_per_view.csv")))
+    rows = []
+    if latest:
+        for row in read_csv_rows(latest):
+            rows.append({"experiment": exp_name, "source": str(latest), **row})
+    return rows
+
+
+def collect_initialization_row(exp_name, exp_dir):
+    manifest = exp_dir / "input_ply" / "initialization_manifest.json"
+    row = {
+        "experiment": exp_name,
+        "manifest": str(manifest) if manifest.exists() else "",
+        "status": "present" if manifest.exists() else "missing",
+        "uses_lidar_training_supervision": "",
+        "uses_lidar_initialization": "",
+        "initialization_source": "",
+        "pointcloud_source": "",
+        "colmap_binary": "",
+        "colmap_point_count": "",
+        "lidar_point_count_used_for_init": "",
+        "no_lidar_leakage": "unknown",
+    }
+    if manifest.exists():
+        payload = read_json(manifest)
+        for key in [
+            "uses_lidar_training_supervision",
+            "uses_lidar_initialization",
+            "initialization_source",
+            "pointcloud_source",
+            "colmap_binary",
+            "colmap_point_count",
+            "lidar_point_count_used_for_init",
+        ]:
+            row[key] = payload.get(key, "")
+        row["no_lidar_leakage"] = "fail" if payload.get("uses_lidar_initialization", False) else "pass"
+    return row
+
+
 def collect_region_rows(exp_name, exp_dir):
     rows = []
     paths = list((exp_dir / "metrics").glob("*region*.json")) + list((exp_dir / "final_eval").glob("*region*.json"))
@@ -172,7 +225,25 @@ def collect_feedback_rows(exp_name, exp_dir, manifest_out):
     rows = []
     fc_dir = exp_dir / "feedback_controller"
     if not fc_dir.exists():
-        return rows
+        return [{
+            "experiment": exp_name,
+            "iteration": "",
+            "status": "not_applicable",
+            "risk_source": "",
+            "supervision_mode": "",
+            "selected_pixels_count": "",
+            "gaussian_group_count": "",
+            "cuda_ok_count": "",
+            "low_evidence_count": "",
+            "live_cuda_contribution": "",
+            "uses_lidar_supervision": "",
+            "uses_lidar_selected_pixels": "",
+            "uses_lidar_initialization": "",
+            "initialization_source": "",
+            "gaussian_parameters_modified": "",
+            "real_repair_enabled": "",
+            "manifest": "",
+        }]
     for manifest in sorted(fc_dir.glob("iter_*/feedback_controller_manifest.json")):
         payload = read_json(manifest)
         iter_name = manifest.parent.name
@@ -200,6 +271,8 @@ def collect_feedback_rows(exp_name, exp_dir, manifest_out):
             "live_cuda_contribution": payload.get("live_cuda_contribution", ""),
             "uses_lidar_supervision": payload.get("uses_lidar_supervision", ""),
             "uses_lidar_selected_pixels": payload.get("uses_lidar_selected_pixels", ""),
+            "uses_lidar_initialization": payload.get("uses_lidar_initialization", ""),
+            "initialization_source": payload.get("initialization_source", ""),
             "gaussian_parameters_modified": payload.get("gaussian_parameters_modified", ""),
             "real_repair_enabled": payload.get("real_repair_enabled", ""),
             "manifest": str(manifest),
@@ -316,10 +389,14 @@ def missing_items(exp_name, exp_dir, feedback_rows):
     for label, path in required:
         if not path.exists():
             rows.append({"experiment": exp_name, "missing": label, "severity": "paper_table_gap"})
-    if exp_name not in {"baseline_streetgs", "da3_only"} and not feedback_rows:
+    if exp_name not in {"baseline_streetgs", "da3_only"} and not [r for r in feedback_rows if r.get("status") != "not_applicable"]:
         rows.append({"experiment": exp_name, "missing": "feedback_controller/iter_*/feedback_controller_manifest.json", "severity": "method_evidence_gap"})
     if not any((exp_dir / "final_eval").glob("**/*panel*.*")) and not any((exp_dir / "feedback_controller").glob("**/*panel*.*")):
         rows.append({"experiment": exp_name, "missing": "representative panels", "severity": "figure_gap"})
+    if not (exp_dir / "input_ply" / "initialization_manifest.json").exists():
+        rows.append({"experiment": exp_name, "missing": "input_ply/initialization_manifest.json", "severity": "initialization_audit_gap"})
+    if not (exp_dir / "metrics" / "eval_summary.csv").exists():
+        rows.append({"experiment": exp_name, "missing": "metrics/eval_summary.csv", "severity": "paper_table_gap"})
     return rows
 
 
@@ -345,36 +422,52 @@ def main():
     repair_rows = []
     figure_rows = []
     missing_rows = []
+    eval_rows = []
+    eval_per_view_rows = []
+    initialization_rows = []
 
     for exp_dir in find_experiment_dirs(output_root):
         exp_name = exp_dir.name
         feedback_rows = collect_feedback_rows(exp_name, exp_dir, manifest_dir)
         metrics = collect_final_metrics(exp_dir)
-        final_row = {"experiment": exp_name, **metrics}
+        init_row = collect_initialization_row(exp_name, exp_dir)
+        final_row = {"experiment": exp_name, **metrics, **{f"init.{k}": v for k, v in init_row.items() if k != "experiment"}}
         final_rows.append(final_row)
+        initialization_rows.append(init_row)
+        eval_rows.extend(collect_eval_rows(exp_name, exp_dir))
+        eval_per_view_rows.extend(collect_latest_per_view_rows(exp_name, exp_dir))
         region_rows.extend(collect_region_rows(exp_name, exp_dir))
         feedback_rows_all.extend(feedback_rows)
         safety_rows.extend(collect_safety_rows(exp_name, exp_dir))
         repair_rows.extend(collect_repair_rows(exp_name, exp_dir))
         figure_rows.extend(collect_figures(exp_name, exp_dir, figure_dir, args.max_figures_per_category))
         missing_rows.extend(missing_items(exp_name, exp_dir, feedback_rows))
+        feedback_trigger_count = len([row for row in feedback_rows if row.get("status") != "not_applicable"])
         experiment_rows.append({
             "experiment": exp_name,
             "path": str(exp_dir),
             "has_final_metrics": bool(metrics),
-            "feedback_trigger_count": len(feedback_rows),
+            "initialization_status": init_row.get("status", ""),
+            "uses_lidar_initialization": init_row.get("uses_lidar_initialization", ""),
+            "initialization_source": init_row.get("initialization_source", ""),
+            "feedback_trigger_count": feedback_trigger_count,
             "figure_count": len([row for row in figure_rows if row["experiment"] == exp_name]),
         })
 
     final_fields = sorted({key for row in final_rows for key in row.keys()} | {"experiment"})
     write_csv(table_dir / "main_final_metrics.csv", final_rows, final_fields)
     write_csv(table_dir / "region_lidar_geometry_metrics.csv", region_rows, ["experiment", "source", "region", "valid_lidar_count", "confidence", "MAE", "RMSE", "AbsRel", "delta_lt_1_25"])
-    write_csv(table_dir / "feedback_trigger_summary.csv", feedback_rows_all, ["experiment", "iteration", "status", "risk_source", "supervision_mode", "selected_pixels_count", "gaussian_group_count", "cuda_ok_count", "low_evidence_count", "live_cuda_contribution", "uses_lidar_supervision", "uses_lidar_selected_pixels", "gaussian_parameters_modified", "real_repair_enabled", "manifest"])
+    eval_fields = sorted({key for row in eval_rows for key in row.keys()} | {"experiment", "source"})
+    per_view_fields = sorted({key for row in eval_per_view_rows for key in row.keys()} | {"experiment", "source"})
+    write_csv(table_dir / "eval_summary.csv", eval_rows, eval_fields)
+    write_csv(table_dir / "eval_latest_per_view.csv", eval_per_view_rows, per_view_fields)
+    write_csv(table_dir / "initialization_summary.csv", initialization_rows, ["experiment", "manifest", "status", "uses_lidar_training_supervision", "uses_lidar_initialization", "initialization_source", "pointcloud_source", "colmap_binary", "colmap_point_count", "lidar_point_count_used_for_init", "no_lidar_leakage"])
+    write_csv(table_dir / "feedback_trigger_summary.csv", feedback_rows_all, ["experiment", "iteration", "status", "risk_source", "supervision_mode", "selected_pixels_count", "gaussian_group_count", "cuda_ok_count", "low_evidence_count", "live_cuda_contribution", "uses_lidar_supervision", "uses_lidar_selected_pixels", "uses_lidar_initialization", "initialization_source", "gaussian_parameters_modified", "real_repair_enabled", "manifest"])
     write_csv(table_dir / "safety_audit_summary.csv", safety_rows, ["experiment", "iteration", "source", "status", "uses_lidar_supervision", "uses_lidar_selected_pixels", "gaussian_parameters_modified", "real_repair_enabled", "allow_parameter_modification", "safety_checks"])
     write_csv(table_dir / "repair_candidate_summary.csv", repair_rows, ["experiment", "iteration", "mode", "source", "status", "modified_count", "protected_count", "skipped_count", "candidate_count", "rgb_delta"])
     write_csv(table_dir / "figure_index.csv", figure_rows, ["experiment", "category", "source", "copied_to"])
     write_csv(table_dir / "missing_evidence_report.csv", missing_rows, ["experiment", "missing", "severity"])
-    write_csv(table_dir / "experiment_inventory.csv", experiment_rows, ["experiment", "path", "has_final_metrics", "feedback_trigger_count", "figure_count"])
+    write_csv(table_dir / "experiment_inventory.csv", experiment_rows, ["experiment", "path", "has_final_metrics", "initialization_status", "uses_lidar_initialization", "initialization_source", "feedback_trigger_count", "figure_count"])
 
     summary = {
         "output_root": str(output_root),
@@ -384,6 +477,9 @@ def main():
             "main_final_metrics": str(table_dir / "main_final_metrics.csv"),
             "region_lidar_geometry_metrics": str(table_dir / "region_lidar_geometry_metrics.csv"),
             "feedback_trigger_summary": str(table_dir / "feedback_trigger_summary.csv"),
+            "initialization_summary": str(table_dir / "initialization_summary.csv"),
+            "eval_summary": str(table_dir / "eval_summary.csv"),
+            "eval_latest_per_view": str(table_dir / "eval_latest_per_view.csv"),
             "safety_audit_summary": str(table_dir / "safety_audit_summary.csv"),
             "repair_candidate_summary": str(table_dir / "repair_candidate_summary.csv"),
             "figure_index": str(table_dir / "figure_index.csv"),
@@ -393,6 +489,7 @@ def main():
         "notes": [
             "Metrics are copied or summarized only from existing run outputs.",
             "DA3-unsupervised paper claims should require uses_lidar_supervision=false and uses_lidar_selected_pixels=false in safety/feedback tables.",
+            "No-LiDAR initialization claims should require uses_lidar_initialization=false in initialization_summary.csv.",
             "Region geometry rows must be interpreted with valid_lidar_count and confidence.",
         ],
     }
@@ -405,6 +502,9 @@ def main():
         "Generated by `scripts/build_paper_evidence_pack.py`.\n\n"
         "## Tables\n\n"
         "- `tables/main_final_metrics.csv`: final/global experiment metrics.\n"
+        "- `tables/initialization_summary.csv`: initialization source and LiDAR-init leakage audit.\n"
+        "- `tables/eval_summary.csv`: training evaluation mean/median/outlier summary.\n"
+        "- `tables/eval_latest_per_view.csv`: latest per-view evaluation diagnostics.\n"
         "- `tables/region_lidar_geometry_metrics.csv`: region-local geometry metrics with `valid_lidar_count` and confidence.\n"
         "- `tables/feedback_trigger_summary.csv`: periodic feedback trigger evidence.\n"
         "- `tables/safety_audit_summary.csv`: LiDAR leakage and repair safety audit rows.\n"

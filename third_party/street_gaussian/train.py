@@ -213,6 +213,35 @@ def _append_gaussian_control_to_manifest(manifest_path, control_summary):
         print(f"[GaussianControl][WARN] failed to append manifest: {exc}")
 
 
+def _append_initialization_to_manifest(manifest_path, scene):
+    if not manifest_path or not os.path.exists(manifest_path):
+        return
+    init = getattr(getattr(scene, "metadata", None), "get", lambda *_: {})("initialization_manifest", {})
+    if not init:
+        init_path = os.path.join(cfg.model_path, "input_ply", "initialization_manifest.json")
+        if os.path.exists(init_path):
+            with open(init_path, "r", encoding="utf-8-sig") as f:
+                init = json.load(f)
+    if not init:
+        return
+    try:
+        for path in [manifest_path, os.path.join(os.path.dirname(manifest_path), "audit_summary.json")]:
+            if not os.path.exists(path):
+                continue
+            with open(path, "r", encoding="utf-8-sig") as f:
+                payload = json.load(f)
+            payload["uses_lidar_initialization"] = init.get("uses_lidar_initialization", "")
+            payload["initialization_source"] = init.get("initialization_source", "")
+            payload["pointcloud_source"] = init.get("pointcloud_source", "")
+            payload["colmap_binary"] = init.get("colmap_binary", "")
+            payload["colmap_point_count"] = init.get("colmap_point_count", "")
+            payload["lidar_point_count_used_for_init"] = init.get("lidar_point_count_used_for_init", "")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        print(f"[InitAudit][WARN] failed to append initialization manifest: {exc}")
+
+
 def _write_scalar_trace(trace_path, iteration, scalar_dict):
     if not trace_path:
         return
@@ -823,6 +852,7 @@ def training():
                 scalar_dict["feedback_controller_active_updated"] = 1
             scalar_dict["feedback_controller_triggered"] = 1
             scalar_dict["feedback_controller_status_valid"] = 1 if trigger_result.status == "valid" else 0
+            _append_initialization_to_manifest(trigger_result.manifest_path, scene)
             if gaussian_control.enabled and trigger_result.manifest_path:
                 trigger_dir = os.path.dirname(trigger_result.manifest_path)
                 group_path = os.path.join(

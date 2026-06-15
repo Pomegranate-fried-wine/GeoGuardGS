@@ -68,6 +68,10 @@ def main():
     cameras = _as_int_list(get(cfg, "data.cameras", []))
     lambda_sky_scale = get(cfg, "optim.lambda_sky_scale", [])
     initialization_note = get(cfg, "data.initialization_note", "")
+    require_no_lidar_init = bool(get(cfg, "data.require_no_lidar_initialization", False))
+    allow_lidar_init = bool(get(cfg, "data.allow_lidar_initialization", True))
+    use_colmap = bool(get(cfg, "data.use_colmap", False))
+    filter_colmap = bool(get(cfg, "data.filter_colmap", False))
 
     if supervision == "da3_unsupervised":
         checks.append(("da3_no_lidar_loss", not uses_lidar and lambda_lidar == 0.0))
@@ -82,6 +86,10 @@ def main():
     if isinstance(lambda_sky_scale, list) and lambda_sky_scale:
         max_cam = max(cameras) if cameras else -1
         checks.append(("lambda_sky_scale_covers_cameras", max_cam < len(lambda_sky_scale)))
+    if require_no_lidar_init:
+        checks.append(("no_lidar_init_uses_colmap", use_colmap))
+        checks.append(("no_lidar_init_filters_colmap", filter_colmap))
+        checks.append(("no_lidar_init_disables_lidar_pointcloud", not allow_lidar_init))
 
     failed = [name for name, ok in checks if not ok]
     payload = {
@@ -98,8 +106,10 @@ def main():
             "cameras": cameras,
             "lambda_sky_scale_length": len(lambda_sky_scale) if isinstance(lambda_sky_scale, list) else None,
             "initialization_note": initialization_note,
-            "use_colmap": bool(get(cfg, "data.use_colmap", False)),
-            "filter_colmap": bool(get(cfg, "data.filter_colmap", False)),
+            "use_colmap": use_colmap,
+            "filter_colmap": filter_colmap,
+            "allow_lidar_initialization": allow_lidar_init,
+            "require_no_lidar_initialization": require_no_lidar_init,
         },
     }
     if "lambda_sky_scale_covers_cameras" in failed:
@@ -108,6 +118,13 @@ def main():
             f"max(data.cameras)={max(cameras) if cameras else 'none'}, "
             f"len(lambda_sky_scale)={len(lambda_sky_scale)}. "
             "Use a scale list that covers all camera ids, e.g. [1, 1, 0, 0, 0] for cameras [0,1,2,3,4]."
+        )
+    no_lidar_failures = [name for name in failed if name.startswith("no_lidar_init_")]
+    if no_lidar_failures:
+        payload["error"] = (
+            "No-LiDAR initialization configs must use COLMAP/SfM pointclouds only: "
+            "set data.use_colmap=true, data.filter_colmap=true, "
+            "data.allow_lidar_initialization=false, and data.require_no_lidar_initialization=true."
         )
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     if args.json_out:
