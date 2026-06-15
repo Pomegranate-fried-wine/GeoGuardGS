@@ -81,7 +81,8 @@ train:
   periodic_eval_enabled: true
   periodic_eval_interval: 500
   periodic_eval_view_ids: []
-  periodic_eval_max_views: 5
+  periodic_eval_views_per_camera: 3
+  periodic_eval_max_views: 15
   psnr_drop_warn_threshold: 5.0
 
   guided_feedback:

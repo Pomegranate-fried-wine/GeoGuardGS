@@ -84,3 +84,36 @@ StreetGS full-scene initialization protocol.
 
 Do not claim strict no-LiDAR initialization for B/C, because vehicles currently
 depend on the StreetGS-style LiDAR/object initialization path.
+
+## Full-scene v2 output commands
+
+For the next full-scene rerun, use new paper output directories to avoid
+overwriting the previous round:
+
+```bash
+python scripts/build_paper_evidence_pack.py --output-root outputs/a100_main_experiments --paper-dir outputs/paper_evidence_full_scene_v2
+python scripts/build_paper_result_visuals.py --paper-dir outputs/paper_evidence_full_scene_v2 --out-dir outputs/paper_results_full_scene_v2
+python scripts/build_paper_training_gallery.py --output-root outputs/a100_main_experiments --out-dir outputs/paper_results_full_scene_v2/training_gallery --copy-assets
+```
+
+Required outputs:
+
+1. Curves in `outputs/paper_results_full_scene_v2/plots/`: PSNR mean/median,
+   eval L1, total training loss, training RGB L1 loss, DA3 structure loss when
+   present, and LiDAR depth loss when present.
+2. Fixed-view RGB/depth panels in
+   `outputs/paper_results_full_scene_v2/training_gallery/`. Training now
+   defaults to 15 fixed views, 5 cameras x 3 frames, saved every 500
+   iterations through `periodic_eval`.
+3. Audit and metric tables in `outputs/paper_evidence_full_scene_v2/tables/`
+   and compact paper tables in `outputs/paper_results_full_scene_v2/tables/`.
+
+If exact hand-picked views are needed, set:
+
+```yaml
+train:
+  periodic_eval_view_ids: [...]
+```
+
+Otherwise the loader chooses the first three training views per camera and
+keeps that list fixed for the entire run.

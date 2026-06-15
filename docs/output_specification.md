@@ -170,3 +170,38 @@ python scripts/build_paper_training_gallery.py \
 This indexes and copies the every-500-iteration `periodic_eval` panels by
 `iteration + cam_id + image_name`, so the same selected frame/view can be
 compared directly across experiment groups.
+
+## Full-scene v2 paper output
+
+Use the v2 output names for the next full-scene rerun:
+
+```bash
+python scripts/build_paper_evidence_pack.py \
+  --output-root outputs/a100_main_experiments \
+  --paper-dir outputs/paper_evidence_full_scene_v2
+
+python scripts/build_paper_result_visuals.py \
+  --paper-dir outputs/paper_evidence_full_scene_v2 \
+  --out-dir outputs/paper_results_full_scene_v2
+
+python scripts/build_paper_training_gallery.py \
+  --output-root outputs/a100_main_experiments \
+  --out-dir outputs/paper_results_full_scene_v2/training_gallery \
+  --copy-assets
+```
+
+Required outputs:
+
+- `outputs/paper_results_full_scene_v2/plots/psnr_mean_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/psnr_median_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/l1_mean_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/loss_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/l1_loss_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/guided_feedback_da3_structure_loss_curve.png`
+- `outputs/paper_results_full_scene_v2/plots/lidar_depth_loss_curve.png`
+- `outputs/paper_results_full_scene_v2/training_gallery/index.html`
+- `outputs/paper_results_full_scene_v2/training_gallery/training_gallery_index.csv`
+
+Training defaults now save 15 fixed views every 500 iterations: 5 cameras x 3
+frames. Set `train.periodic_eval_view_ids` only when manually pinning exact
+image names.

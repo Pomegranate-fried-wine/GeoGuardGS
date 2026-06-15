@@ -14,10 +14,13 @@ from pathlib import Path
 
 
 EXPERIMENT_ORDER = [
+    "streetgs_original_baseline",
     "baseline_streetgs",
     "baseline_streetgs_colmap_5000",
+    "da3_only_full_scene_lidar_init",
     "da3_only",
     "da3_only_colmap_5000",
+    "da3_periodic_group_softpatch_full_scene_lidar_init",
     "da3_periodic_group_softpatch",
     "da3_periodic_group_softpatch_colmap_5000",
     "da3_periodic_group_softpatch_opacity_reg",
@@ -160,6 +163,15 @@ def collect_latest_per_view_rows(exp_name, exp_dir):
     if latest:
         for row in read_csv_rows(latest):
             rows.append({"experiment": exp_name, "source": str(latest), **row})
+    return rows
+
+
+def collect_scalar_trace_rows(exp_name, exp_dir):
+    path = exp_dir / "metrics" / "train_loss_trace.csv"
+    rows = []
+    if path.exists():
+        for row in read_csv_rows(path):
+            rows.append({"experiment": exp_name, "source": str(path), **row})
     return rows
 
 
@@ -403,7 +415,7 @@ def missing_items(exp_name, exp_dir, feedback_rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", default="outputs/a100_main_experiments")
-    parser.add_argument("--paper-dir", default="outputs/paper_evidence")
+    parser.add_argument("--paper-dir", default="outputs/paper_evidence_full_scene_v2")
     parser.add_argument("--max-figures-per-category", type=int, default=12)
     args = parser.parse_args()
 
@@ -424,6 +436,7 @@ def main():
     missing_rows = []
     eval_rows = []
     eval_per_view_rows = []
+    scalar_trace_rows = []
     initialization_rows = []
 
     for exp_dir in find_experiment_dirs(output_root):
@@ -436,6 +449,7 @@ def main():
         initialization_rows.append(init_row)
         eval_rows.extend(collect_eval_rows(exp_name, exp_dir))
         eval_per_view_rows.extend(collect_latest_per_view_rows(exp_name, exp_dir))
+        scalar_trace_rows.extend(collect_scalar_trace_rows(exp_name, exp_dir))
         region_rows.extend(collect_region_rows(exp_name, exp_dir))
         feedback_rows_all.extend(feedback_rows)
         safety_rows.extend(collect_safety_rows(exp_name, exp_dir))
@@ -461,6 +475,8 @@ def main():
     per_view_fields = sorted({key for row in eval_per_view_rows for key in row.keys()} | {"experiment", "source"})
     write_csv(table_dir / "eval_summary.csv", eval_rows, eval_fields)
     write_csv(table_dir / "eval_latest_per_view.csv", eval_per_view_rows, per_view_fields)
+    scalar_fields = sorted({key for row in scalar_trace_rows for key in row.keys()} | {"experiment", "source", "iteration"})
+    write_csv(table_dir / "train_scalar_trace.csv", scalar_trace_rows, scalar_fields)
     write_csv(table_dir / "initialization_summary.csv", initialization_rows, ["experiment", "manifest", "status", "uses_lidar_training_supervision", "uses_lidar_initialization", "initialization_source", "pointcloud_source", "colmap_binary", "colmap_point_count", "lidar_point_count_used_for_init", "no_lidar_leakage"])
     write_csv(table_dir / "feedback_trigger_summary.csv", feedback_rows_all, ["experiment", "iteration", "status", "risk_source", "supervision_mode", "selected_pixels_count", "gaussian_group_count", "cuda_ok_count", "low_evidence_count", "live_cuda_contribution", "uses_lidar_supervision", "uses_lidar_selected_pixels", "uses_lidar_initialization", "initialization_source", "gaussian_parameters_modified", "real_repair_enabled", "manifest"])
     write_csv(table_dir / "safety_audit_summary.csv", safety_rows, ["experiment", "iteration", "source", "status", "uses_lidar_supervision", "uses_lidar_selected_pixels", "gaussian_parameters_modified", "real_repair_enabled", "allow_parameter_modification", "safety_checks"])
@@ -480,6 +496,7 @@ def main():
             "initialization_summary": str(table_dir / "initialization_summary.csv"),
             "eval_summary": str(table_dir / "eval_summary.csv"),
             "eval_latest_per_view": str(table_dir / "eval_latest_per_view.csv"),
+            "train_scalar_trace": str(table_dir / "train_scalar_trace.csv"),
             "safety_audit_summary": str(table_dir / "safety_audit_summary.csv"),
             "repair_candidate_summary": str(table_dir / "repair_candidate_summary.csv"),
             "figure_index": str(table_dir / "figure_index.csv"),
@@ -505,6 +522,7 @@ def main():
         "- `tables/initialization_summary.csv`: initialization source and LiDAR-init leakage audit.\n"
         "- `tables/eval_summary.csv`: training evaluation mean/median/outlier summary.\n"
         "- `tables/eval_latest_per_view.csv`: latest per-view evaluation diagnostics.\n"
+        "- `tables/train_scalar_trace.csv`: per-iteration training losses and diagnostic scalars.\n"
         "- `tables/region_lidar_geometry_metrics.csv`: region-local geometry metrics with `valid_lidar_count` and confidence.\n"
         "- `tables/feedback_trigger_summary.csv`: periodic feedback trigger evidence.\n"
         "- `tables/safety_audit_summary.csv`: LiDAR leakage and repair safety audit rows.\n"

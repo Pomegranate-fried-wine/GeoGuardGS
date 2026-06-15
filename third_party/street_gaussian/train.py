@@ -395,22 +395,25 @@ def _append_jsonl(path, payload):
 def _select_eval_cameras(scene, train_args):
     cameras = scene.getTrainCameras()
     explicit = list(getattr(train_args, "periodic_eval_view_ids", []) or [])
+    max_views = int(getattr(train_args, "periodic_eval_max_views", 15))
     selected = []
     if explicit:
         wanted = {str(v) for v in explicit}
         selected = [cam for cam in cameras if str(getattr(cam, "image_name", "")) in wanted]
     if not selected:
-        seen_cams = set()
+        views_per_camera = int(getattr(train_args, "periodic_eval_views_per_camera", 3) or 1)
+        per_cam_counts = {}
         for cam in cameras:
-            cam_id = int(getattr(cam, "meta", {}).get("cam", len(seen_cams)))
-            if cam_id in seen_cams:
+            cam_id = int(getattr(cam, "meta", {}).get("cam", len(per_cam_counts)))
+            count = per_cam_counts.get(cam_id, 0)
+            if count >= views_per_camera:
                 continue
             selected.append(cam)
-            seen_cams.add(cam_id)
-            if len(selected) >= int(getattr(train_args, "periodic_eval_max_views", 5)):
+            per_cam_counts[cam_id] = count + 1
+            if len(selected) >= max_views:
                 break
     if not selected and cameras:
-        selected = cameras[: min(len(cameras), int(getattr(train_args, "periodic_eval_max_views", 5)))]
+        selected = cameras[: min(len(cameras), max_views)]
     return selected
 
 

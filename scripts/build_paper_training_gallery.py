@@ -194,7 +194,7 @@ def build_html(out_dir, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", default="outputs/a100_main_experiments")
-    parser.add_argument("--out-dir", default="outputs/paper_results/training_gallery")
+    parser.add_argument("--out-dir", default="outputs/paper_results_full_scene_v2/training_gallery")
     parser.add_argument("--experiments", nargs="*", default=None, help="Experiment directory names under output-root. Defaults to known formal full-scene names.")
     parser.add_argument("--copy-assets", action="store_true", help="Also copy individual RGB/depth/risk assets in addition to comparison panels.")
     args = parser.parse_args()

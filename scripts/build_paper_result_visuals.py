@@ -10,10 +10,13 @@ from pathlib import Path
 
 
 EXPERIMENT_LABELS = {
+    "streetgs_original_baseline": "A StreetGS",
     "baseline_streetgs": "A StreetGS",
     "baseline_streetgs_colmap_5000": "A StreetGS",
+    "da3_only_full_scene_lidar_init": "B DA3-only",
     "da3_only": "B DA3-only",
     "da3_only_colmap_5000": "B DA3-only",
+    "da3_periodic_group_softpatch_full_scene_lidar_init": "D DA3+Feedback",
     "da3_periodic_group_softpatch": "C DA3+Feedback",
     "da3_periodic_group_softpatch_colmap_5000": "C DA3+Feedback",
     "da3_periodic_group_softpatch_opacity_reg": "D +Opacity Reg",
@@ -263,6 +266,37 @@ def plot_eval_curves(eval_rows, out_dir, metric, ylabel):
     return {"path": str(path), "status": "ok", "error": ""}
 
 
+def plot_scalar_curves(scalar_rows, out_dir, metric, ylabel, every=100):
+    plt, error = load_matplotlib()
+    if plt is None:
+        return {"path": "", "status": "skipped", "error": error, "metric": metric}
+    by_exp = {}
+    for row in scalar_rows:
+        x = to_float(row.get("iteration"))
+        y = to_float(row.get(metric))
+        if x is None or y is None:
+            continue
+        if every > 1 and int(x) % every != 0:
+            continue
+        by_exp.setdefault(row.get("experiment", ""), []).append((x, y))
+    if not by_exp:
+        return {"path": "", "status": "missing_data", "error": "", "metric": metric}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=160)
+    for exp, points in sorted(by_exp.items(), key=lambda item: label_for(item[0])):
+        points = sorted(points)
+        ax.plot([p[0] for p in points], [p[1] for p in points], linewidth=1.3, label=label_for(exp))
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    path = out_dir / f"{metric}_curve.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return {"path": str(path), "status": "ok", "error": "", "metric": metric}
+
+
 def plot_feedback_timeline(feedback_rows, out_dir):
     plt, error = load_matplotlib()
     if plt is None:
@@ -345,8 +379,8 @@ def copy_selected_figures(paper_dir, out_dir, max_per_category):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--paper-dir", default="outputs/paper_evidence")
-    parser.add_argument("--out-dir", default="outputs/paper_results")
+    parser.add_argument("--paper-dir", default="outputs/paper_evidence_full_scene_v2")
+    parser.add_argument("--out-dir", default="outputs/paper_results_full_scene_v2")
     parser.add_argument("--max-selected-figures-per-category", type=int, default=6)
     args = parser.parse_args()
 
@@ -377,10 +411,15 @@ def main():
     (out_latex / "table_feedback_summary.tex").write_text(latex_table(feedback_rows, feedback_fields, "Feedback trigger summary.", "tab:feedback_summary"), encoding="utf-8")
 
     eval_rows = read_csv(tables_dir / "eval_summary.csv")
+    scalar_rows = read_csv(tables_dir / "train_scalar_trace.csv")
     plot_rows = [
         plot_eval_curves(eval_rows, out_plots, "psnr_mean", "PSNR mean"),
         plot_eval_curves(eval_rows, out_plots, "psnr_median", "PSNR median"),
         plot_eval_curves(eval_rows, out_plots, "l1_mean", "L1 mean"),
+        plot_scalar_curves(scalar_rows, out_plots, "loss", "Training loss"),
+        plot_scalar_curves(scalar_rows, out_plots, "l1_loss", "Training RGB L1 loss"),
+        plot_scalar_curves(scalar_rows, out_plots, "guided_feedback_da3_structure_loss", "DA3 structure loss"),
+        plot_scalar_curves(scalar_rows, out_plots, "lidar_depth_loss", "LiDAR depth loss"),
         plot_feedback_timeline(read_csv(tables_dir / "feedback_trigger_summary.csv"), out_plots),
         plot_initialization_audit(read_csv(tables_dir / "initialization_summary.csv"), out_plots),
     ]
@@ -422,6 +461,10 @@ def main():
         "- `plots/psnr_mean_curve.png`\n"
         "- `plots/psnr_median_curve.png`\n"
         "- `plots/l1_mean_curve.png`\n"
+        "- `plots/loss_curve.png`\n"
+        "- `plots/l1_loss_curve.png`\n"
+        "- `plots/guided_feedback_da3_structure_loss_curve.png`\n"
+        "- `plots/lidar_depth_loss_curve.png`\n"
         "- `plots/feedback_trigger_timeline.png`\n"
         "- `plots/initialization_audit.png`\n\n"
         "## Gate\n\n"
