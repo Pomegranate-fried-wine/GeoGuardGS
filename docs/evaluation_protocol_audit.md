@@ -64,7 +64,7 @@ Local code references:
 ## GeoGuardGS formal evaluation plan
 
 Training-time `periodic_eval` and `eval_summary.csv` remain diagnostics.
-Main paper results must use final full evaluation:
+Main paper results must use final held-out test evaluation by default:
 
 ```bash
 python scripts/final_evaluate_experiments.py \
@@ -73,14 +73,20 @@ python scripts/final_evaluate_experiments.py \
     configs/experiments/a100_da3_only.yaml \
     configs/experiments/a100_da3_periodic_group_softpatch.yaml \
     configs/experiments/a100_pv_da3_feedback_obj.yaml \
-  --output-root outputs/final_evaluation_full_scene_v2 \
-  --loaded-iter 30000
+  --output-root outputs/final_evaluation_test_only_v2 \
+  --loaded-iter 30000 \
+  --splits test
 ```
+
+The script appends per-view CSV rows during evaluation and resumes by default.
+Use `--overwrite` for a clean rerun. Full train+test evaluation remains
+available with `--splits test train`, but is not the default because it is much
+more expensive than the held-out test split.
 
 Outputs:
 
 ```text
-outputs/final_evaluation_full_scene_v2/
+outputs/final_evaluation_test_only_v2/
   <experiment>/
     metrics_full_image.csv
     metrics_object_region.csv
@@ -99,5 +105,5 @@ Required scopes:
 - `background_region`: valid pixels outside object masks.
 
 Paper evidence scripts now prefer `final_full_evaluation_summary.csv` for main
-tables and treat new `eval_summary.csv` rows as
-`periodic_full_split_training_eval`.
+tables. By default they read `outputs/final_evaluation_test_only_v2`; use
+`--final-eval-root` to collect another final evaluation directory.

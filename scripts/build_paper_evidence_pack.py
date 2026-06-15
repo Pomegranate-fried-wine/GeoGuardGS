@@ -457,7 +457,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", default="outputs/a100_main_experiments")
     parser.add_argument("--paper-dir", default="outputs/paper_evidence_full_scene_v2")
-    parser.add_argument("--final-eval-root", default="outputs/final_evaluation_full_scene_v2")
+    parser.add_argument("--final-eval-root", default="outputs/final_evaluation_test_only_v2")
     parser.add_argument("--max-figures-per-category", type=int, default=12)
     args = parser.parse_args()
 
@@ -553,6 +553,7 @@ def main():
         "notes": [
             "Metrics are copied or summarized only from existing run outputs.",
             "Training-time eval_summary.csv combines sampled_diagnostic_eval and full_split_training_eval rows when available; final_full_evaluation_summary.csv remains the paper-grade main result.",
+            "The default final evaluation root is outputs/final_evaluation_test_only_v2; use --final-eval-root to collect a different evaluation directory.",
             "Paper main results should use final_full_evaluation_summary.csv when available.",
             "DA3-unsupervised paper claims should require uses_lidar_supervision=false and uses_lidar_selected_pixels=false in safety/feedback tables.",
             "No-LiDAR initialization claims should require uses_lidar_initialization=false in initialization_summary.csv.",

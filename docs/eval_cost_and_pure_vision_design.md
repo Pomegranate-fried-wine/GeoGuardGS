@@ -58,9 +58,15 @@ Final paper tables should still use:
 ```bash
 python scripts/final_evaluate_experiments.py \
   --configs configs/experiments/a100_baseline_streetgs.yaml configs/experiments/a100_da3_only.yaml configs/experiments/a100_da3_periodic_group_softpatch.yaml \
-  --output-root outputs/final_evaluation_full_scene_v2 \
-  --loaded-iter 30000
+  --output-root outputs/final_evaluation_test_only_v2 \
+  --loaded-iter 30000 \
+  --splits test
 ```
+
+The final evaluation script defaults to held-out test only, writes per-view CSV
+rows incrementally, and resumes existing partial rows unless `--overwrite` is
+specified. Use `--splits test train` only when train-split final metrics are
+explicitly needed.
 
 ## Pure-vision + DA3 object-aware prototype
 

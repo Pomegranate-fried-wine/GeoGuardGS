@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run paper-grade final evaluation for GeoGuardGS/StreetGS experiments.
 
-This evaluates a trained checkpoint directly, without relying on the sampled
-training-time diagnostic CSV. It writes full-image, object-region, and
-background-region metrics for train/test splits.
+The default protocol evaluates the held-out test split only. Training split
+evaluation is available with ``--splits test train`` but is intentionally not
+the default because the formal Waymo setup has hundreds of training views per
+experiment. Per-view CSV files are appended during evaluation so interrupted
+runs keep completed rows and can resume.
 """
 
 import argparse
@@ -17,6 +19,21 @@ import sys
 from pathlib import Path
 
 import yaml
+
+
+SCOPES = ["full_image", "object_region", "background_region"]
+METRICS = ["l1", "psnr", "ssim", "lpips"]
+PER_VIEW_FIELDS = [
+    "split", "scope", "view_index", "cam_id", "frame", "frame_idx",
+    "image_name", "valid_pixel_count", "status", "l1", "psnr", "ssim",
+    "lpips", "warning",
+]
+SUMMARY_FIELDS = ["scope", "split", "view_count"]
+for metric in METRICS:
+    SUMMARY_FIELDS.extend([
+        f"{metric}_mean", f"{metric}_median", f"{metric}_std",
+        f"{metric}_min", f"{metric}_max",
+    ])
 
 
 def _deep_merge(base, override):
@@ -54,12 +71,14 @@ def _materialize_config(repo_root, config_path, out_dir, loaded_iter):
         payload["gpus"] = [-1]
         print(
             "[FinalEval][CUDA] Respect existing "
-            f"CUDA_VISIBLE_DEVICES={existing_visible}; disable cfg.gpus override"
+            f"CUDA_VISIBLE_DEVICES={existing_visible}; disable cfg.gpus override",
+            flush=True,
         )
     else:
         print(
             "[FinalEval][CUDA] CUDA_VISIBLE_DEVICES is unset; "
-            f"StreetGS may use cfg.gpus={payload.get('gpus', '<missing>')}"
+            f"StreetGS may use cfg.gpus={payload.get('gpus', '<missing>')}",
+            flush=True,
         )
     payload.setdefault("eval", {})
     payload["eval"]["skip_train"] = False
@@ -80,6 +99,49 @@ def write_csv(path, rows, fieldnames):
             writer.writerow({k: row.get(k, "") for k in fieldnames})
 
 
+def append_csv_row(path, row, fieldnames):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
+    with path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow({k: row.get(k, "") for k in fieldnames})
+        f.flush()
+
+
+def read_csv(path):
+    if not path.exists():
+        return []
+    with path.open("r", newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+def _scope_csv_path(exp_out, scope):
+    return exp_out / f"metrics_{scope}.csv"
+
+
+def _completed_view_keys(exp_out):
+    per_scope = []
+    for scope in SCOPES:
+        keys = {
+            (row.get("split", ""), row.get("image_name", ""))
+            for row in read_csv(_scope_csv_path(exp_out, scope))
+            if row.get("split") and row.get("image_name")
+        }
+        per_scope.append(keys)
+    return set.intersection(*per_scope) if per_scope else set()
+
+
+def _all_metric_rows(exp_out):
+    rows = []
+    for scope in SCOPES:
+        for row in read_csv(_scope_csv_path(exp_out, scope)):
+            row.setdefault("scope", scope)
+            rows.append(row)
+    return rows
+
+
 def to_float(value):
     if value is None or value == "":
         return None
@@ -93,27 +155,39 @@ def to_float(value):
 
 
 def summarize(rows, scope, split):
-    subset = [r for r in rows if r.get("scope") == scope and r.get("split") == split and r.get("status") == "valid"]
+    subset = [
+        r for r in rows
+        if r.get("scope") == scope and r.get("split") == split
+        and r.get("status") == "valid"
+    ]
     out = {"scope": scope, "split": split, "view_count": len(subset)}
-    for metric in ["l1", "psnr", "ssim", "lpips"]:
+    for metric in METRICS:
         values = [to_float(r.get(metric)) for r in subset]
         values = [v for v in values if v is not None]
-        if values:
-            out[f"{metric}_mean"] = sum(values) / len(values)
-            sorted_values = sorted(values)
-            mid = len(sorted_values) // 2
-            out[f"{metric}_median"] = sorted_values[mid] if len(sorted_values) % 2 else 0.5 * (sorted_values[mid - 1] + sorted_values[mid])
-            mean = out[f"{metric}_mean"]
-            out[f"{metric}_std"] = math.sqrt(sum((v - mean) ** 2 for v in values) / len(values))
-            out[f"{metric}_min"] = min(values)
-            out[f"{metric}_max"] = max(values)
-        else:
-            out[f"{metric}_mean"] = ""
-            out[f"{metric}_median"] = ""
-            out[f"{metric}_std"] = ""
-            out[f"{metric}_min"] = ""
-            out[f"{metric}_max"] = ""
+        if not values:
+            for stat in ["mean", "median", "std", "min", "max"]:
+                out[f"{metric}_{stat}"] = ""
+            continue
+        sorted_values = sorted(values)
+        mid = len(sorted_values) // 2
+        mean = sum(values) / len(values)
+        out[f"{metric}_mean"] = mean
+        out[f"{metric}_median"] = (
+            sorted_values[mid]
+            if len(sorted_values) % 2
+            else 0.5 * (sorted_values[mid - 1] + sorted_values[mid])
+        )
+        out[f"{metric}_std"] = math.sqrt(sum((v - mean) ** 2 for v in values) / len(values))
+        out[f"{metric}_min"] = min(values)
+        out[f"{metric}_max"] = max(values)
     return out
+
+
+def write_current_summaries(exp_out, splits):
+    rows = _all_metric_rows(exp_out)
+    summary_rows = [summarize(rows, scope, split) for scope in SCOPES for split in splits]
+    write_csv(exp_out / "summary_by_scope.csv", summary_rows, SUMMARY_FIELDS)
+    return summary_rows
 
 
 def _save_panel(path, title_images):
@@ -133,7 +207,7 @@ def _save_panel(path, title_images):
     cv2.imwrite(str(path), panel)
 
 
-def _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, mask, scope, include_lpips):
+def _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, mask, scope, include_lpips, lpips_scopes):
     mask = mask.bool()
     valid = int(torch.count_nonzero(mask).item())
     if valid == 0:
@@ -143,6 +217,7 @@ def _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, mask
             "view_index": idx,
             "cam_id": camera.meta.get("cam", ""),
             "frame": camera.meta.get("frame", ""),
+            "frame_idx": camera.meta.get("frame_idx", ""),
             "image_name": getattr(camera, "image_name", ""),
             "valid_pixel_count": 0,
             "status": "not_applicable",
@@ -167,7 +242,7 @@ def _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, mask
     except Exception as exc:
         row["ssim"] = ""
         row["warning"] = f"ssim_failed:{exc}"
-    if include_lpips:
+    if include_lpips and scope in lpips_scopes:
         try:
             masked_image = torch.where(mask, image, torch.zeros_like(image))
             masked_gt = torch.where(mask, gt, torch.zeros_like(gt))
@@ -180,18 +255,20 @@ def _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, mask
     return row
 
 
-def evaluate_one(repo_root, config_path, final_root, loaded_iter, max_panels, include_lpips):
+def evaluate_one(repo_root, config_path, final_root, args):
     streetgs_root = repo_root / "third_party" / "street_gaussian"
     sys.path.insert(0, str(streetgs_root))
     sys.path.insert(0, str(repo_root))
     os.chdir(streetgs_root)
 
     exp_out = final_root / Path(config_path).stem
-    materialized, payload = _materialize_config(repo_root, config_path, exp_out / "configs", loaded_iter)
+    if args.overwrite and exp_out.exists():
+        print(f"[FinalEval] overwrite=true; removing {exp_out}", flush=True)
+        shutil.rmtree(exp_out)
+    materialized, payload = _materialize_config(repo_root, config_path, exp_out / "configs", args.loaded_iter)
     sys.argv = ["final_evaluate_experiments.py", "--config", str(materialized)]
 
     import torch
-    from lib.config import cfg
     from lib.datasets.dataset import Dataset
     from lib.models.scene import Scene
     from lib.models.street_gaussian_model import StreetGaussianModel
@@ -202,18 +279,47 @@ def evaluate_one(repo_root, config_path, final_root, loaded_iter, max_panels, in
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is required for final evaluation.")
 
-    rows = []
+    completed = _completed_view_keys(exp_out) if args.resume else set()
+    if completed:
+        print(f"[FinalEval] resume=true; completed views found={len(completed)}", flush=True)
+
+    requested_splits = list(dict.fromkeys(args.splits))
+    lpips_scopes = set(args.lpips_scopes or [])
+    split_cameras = {}
     with torch.no_grad():
         dataset = Dataset()
         gaussians = StreetGaussianModel(dataset.scene_info.metadata)
         scene = Scene(gaussians=gaussians, dataset=dataset)
         renderer = StreetGaussianRenderer()
-        split_cameras = {
-            "train": scene.getTrainCameras(),
-            "test": scene.getTestCameras(),
-        }
+        if "train" in requested_splits:
+            split_cameras["train"] = scene.getTrainCameras()
+        if "test" in requested_splits:
+            split_cameras["test"] = scene.getTestCameras()
+
+        print(
+            f"[FinalEval] experiment={Path(config_path).stem} loaded_iter={args.loaded_iter}",
+            flush=True,
+        )
+        print(
+            "[FinalEval] metrics=psnr,ssim,l1,"
+            f"lpips_scopes={','.join(sorted(lpips_scopes)) if not args.skip_lpips else 'disabled'}",
+            flush=True,
+        )
+
         for split, cameras in split_cameras.items():
-            for idx, camera in enumerate(cameras):
+            if args.max_views_per_split > 0:
+                cameras = cameras[:args.max_views_per_split]
+                split_cameras[split] = cameras
+            print(f"[FinalEval] split={split} views={len(cameras)}", flush=True)
+            try:
+                from tqdm import tqdm
+                iterator = tqdm(cameras, desc=f"[FinalEval] {Path(config_path).stem} {split}", unit="view")
+            except Exception:
+                iterator = cameras
+            for idx, camera in enumerate(iterator):
+                image_name = getattr(camera, "image_name", "")
+                if args.resume and (split, image_name) in completed:
+                    continue
                 render_pkg = renderer.render(camera, gaussians)
                 image = torch.clamp(render_pkg["rgb"], 0.0, 1.0)
                 gt = torch.clamp(camera.original_image.to("cuda"), 0.0, 1.0)
@@ -228,53 +334,90 @@ def evaluate_one(repo_root, config_path, final_root, loaded_iter, max_panels, in
                     if obj_mask.ndim == 2:
                         obj_mask = obj_mask[None]
                 bg_mask = full_mask & (~obj_mask)
-                rows.append(_metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, full_mask, "full_image", include_lpips))
-                rows.append(_metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, obj_mask & full_mask, "object_region", include_lpips))
-                rows.append(_metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, bg_mask, "background_region", include_lpips))
-                if idx < max_panels:
+                rows = [
+                    _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, full_mask, "full_image", not args.skip_lpips, lpips_scopes),
+                    _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, obj_mask & full_mask, "object_region", not args.skip_lpips, lpips_scopes),
+                    _metric_row(torch, loss_utils, lpips_fn, split, idx, camera, image, gt, bg_mask, "background_region", not args.skip_lpips, lpips_scopes),
+                ]
+                for row in rows:
+                    append_csv_row(_scope_csv_path(exp_out, row["scope"]), row, PER_VIEW_FIELDS)
+                if idx < args.max_panels_per_split:
                     err = torch.clamp(torch.abs(image - gt) * 4.0, 0.0, 1.0)
                     panel_path = exp_out / "figures" / "final_comparison_panels" / split / f"{camera.image_name}_panel.jpg"
                     _save_panel(panel_path, [("GT RGB", gt), ("Rendered RGB", image), ("RGB Error x4", err)])
+                if (idx + 1) % 10 == 0 or idx + 1 == len(cameras):
+                    print(f"[FinalEval] progress: {idx + 1}/{len(cameras)} split={split}", flush=True)
+            write_current_summaries(exp_out, list(split_cameras.keys()))
 
-    fields = [
-        "split", "scope", "view_index", "cam_id", "frame", "frame_idx", "image_name",
-        "valid_pixel_count", "status", "l1", "psnr", "ssim", "lpips", "warning",
-    ]
-    write_csv(exp_out / "metrics_full_image.csv", [r for r in rows if r["scope"] == "full_image"], fields)
-    write_csv(exp_out / "metrics_object_region.csv", [r for r in rows if r["scope"] == "object_region"], fields)
-    write_csv(exp_out / "metrics_background_region.csv", [r for r in rows if r["scope"] == "background_region"], fields)
-    summary_rows = [summarize(rows, scope, split) for scope in ["full_image", "object_region", "background_region"] for split in ["train", "test"]]
-    summary_fields = ["scope", "split", "view_count"]
-    for metric in ["l1", "psnr", "ssim", "lpips"]:
-        summary_fields.extend([f"{metric}_mean", f"{metric}_median", f"{metric}_std", f"{metric}_min", f"{metric}_max"])
-    write_csv(exp_out / "summary_by_scope.csv", summary_rows, summary_fields)
+    summary_rows = write_current_summaries(exp_out, list(split_cameras.keys()))
+    protocol = "full_final_evaluation_test_only" if list(split_cameras.keys()) == ["test"] else "full_final_evaluation"
     manifest = {
         "experiment": Path(config_path).stem,
         "model_path": payload.get("model_path", ""),
-        "loaded_iter": int(loaded_iter),
-        "eval_protocol": "full_final_evaluation",
+        "loaded_iter": int(args.loaded_iter),
+        "eval_protocol": protocol,
         "splits": {split: len(cameras) for split, cameras in split_cameras.items()},
         "include_obj": payload.get("model", {}).get("nsg", {}).get("include_obj", ""),
-        "include_lpips": include_lpips,
+        "include_lpips": not args.skip_lpips,
+        "lpips_scopes": sorted(lpips_scopes) if not args.skip_lpips else [],
+        "resume": bool(args.resume),
     }
     (exp_out / "final_evaluation_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     return exp_out, summary_rows, manifest
 
 
+def _summary_fields_with_experiment():
+    return ["experiment", "eval_protocol", *SUMMARY_FIELDS]
+
+
+def aggregate_existing(final_root):
+    by_scope_rows = []
+    for path in sorted(final_root.glob("*/summary_by_scope.csv")):
+        exp = path.parent.name
+        manifest_path = path.parent / "final_evaluation_manifest.json"
+        protocol = "full_final_evaluation"
+        if manifest_path.exists():
+            try:
+                protocol = json.loads(manifest_path.read_text(encoding="utf-8")).get("eval_protocol", protocol)
+            except Exception:
+                pass
+        for row in read_csv(path):
+            by_scope_rows.append({"experiment": exp, "eval_protocol": protocol, **row})
+    main_rows = [
+        row for row in by_scope_rows
+        if row.get("scope") == "full_image" and row.get("split") == "test"
+    ]
+    fields = _summary_fields_with_experiment()
+    write_csv(final_root / "summary_main.csv", main_rows, fields)
+    write_csv(final_root / "summary_by_scope.csv", by_scope_rows, fields)
+    print(json.dumps({
+        "output_root": str(final_root),
+        "experiment_count": len({row["experiment"] for row in by_scope_rows}),
+        "summary_main": str(final_root / "summary_main.csv"),
+        "summary_by_scope": str(final_root / "summary_by_scope.csv"),
+    }, indent=2, ensure_ascii=False), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--configs", nargs="+", required=True)
-    parser.add_argument("--output-root", default="outputs/final_evaluation_full_scene_v2")
+    parser.add_argument("--output-root", default="outputs/final_evaluation_test_only_v2")
     parser.add_argument("--loaded-iter", type=int, default=30000)
     parser.add_argument("--max-panels-per-split", type=int, default=12)
     parser.add_argument("--skip-lpips", action="store_true")
+    parser.add_argument("--splits", nargs="+", choices=["test", "train"], default=["test"])
+    parser.add_argument("--lpips-scopes", nargs="*", choices=SCOPES, default=["full_image"])
+    parser.add_argument("--resume", dest="resume", action="store_true", default=True)
+    parser.add_argument("--no-resume", dest="resume", action="store_false")
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--max-views-per-split", type=int, default=0)
     parser.add_argument("--single-config-worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
     final_root = repo_root / args.output_root
     if final_root.exists():
-        print(f"[FinalEval] Using existing output root: {final_root}")
+        print(f"[FinalEval] Using existing output root: {final_root}", flush=True)
     final_root.mkdir(parents=True, exist_ok=True)
 
     if not args.single_config_worker and len(args.configs) > 1:
@@ -282,82 +425,44 @@ def main():
             cmd = [
                 sys.executable,
                 str(Path(__file__).resolve()),
-                "--configs",
-                config,
-                "--output-root",
-                args.output_root,
-                "--loaded-iter",
-                str(args.loaded_iter),
-                "--max-panels-per-split",
-                str(args.max_panels_per_split),
+                "--configs", config,
+                "--output-root", args.output_root,
+                "--loaded-iter", str(args.loaded_iter),
+                "--max-panels-per-split", str(args.max_panels_per_split),
+                "--splits", *args.splits,
+                "--lpips-scopes", *args.lpips_scopes,
+                "--max-views-per-split", str(args.max_views_per_split),
                 "--single-config-worker",
             ]
+            cmd.append("--resume" if args.resume else "--no-resume")
             if args.skip_lpips:
                 cmd.append("--skip-lpips")
+            if args.overwrite:
+                cmd.append("--overwrite")
             ret = subprocess.call(cmd, cwd=str(repo_root))
             if ret != 0:
                 raise SystemExit(ret)
         aggregate_existing(final_root)
         return
 
-    main_rows = []
     by_scope_rows = []
     for config in args.configs:
-        exp_dir, summaries, manifest = evaluate_one(
-            repo_root,
-            Path(config).resolve(),
-            final_root,
-            args.loaded_iter,
-            args.max_panels_per_split,
-            include_lpips=not args.skip_lpips,
-        )
+        exp_dir, summaries, manifest = evaluate_one(repo_root, Path(config).resolve(), final_root, args)
         for row in summaries:
-            out = {"experiment": exp_dir.name, "eval_protocol": "full_final_evaluation", **row}
-            by_scope_rows.append(out)
-            if row["scope"] == "full_image" and row["split"] == "test":
-                main_rows.append(out)
-
-    summary_fields = ["experiment", "eval_protocol", "scope", "split", "view_count"]
-    for metric in ["l1", "psnr", "ssim", "lpips"]:
-        summary_fields.extend([f"{metric}_mean", f"{metric}_median", f"{metric}_std", f"{metric}_min", f"{metric}_max"])
-    write_csv(final_root / "summary_main.csv", main_rows, summary_fields)
-    write_csv(final_root / "summary_by_scope.csv", by_scope_rows, summary_fields)
+            by_scope_rows.append({"experiment": exp_dir.name, "eval_protocol": manifest["eval_protocol"], **row})
+    main_rows = [
+        row for row in by_scope_rows
+        if row.get("scope") == "full_image" and row.get("split") == "test"
+    ]
+    fields = _summary_fields_with_experiment()
+    write_csv(final_root / "summary_main.csv", main_rows, fields)
+    write_csv(final_root / "summary_by_scope.csv", by_scope_rows, fields)
     print(json.dumps({
         "output_root": str(final_root),
         "experiment_count": len(args.configs),
         "summary_main": str(final_root / "summary_main.csv"),
         "summary_by_scope": str(final_root / "summary_by_scope.csv"),
-    }, indent=2, ensure_ascii=False))
-
-
-def read_csv(path):
-    if not path.exists():
-        return []
-    with path.open("r", newline="", encoding="utf-8-sig") as f:
-        return list(csv.DictReader(f))
-
-
-def aggregate_existing(final_root):
-    by_scope_rows = []
-    for path in sorted(final_root.glob("*/summary_by_scope.csv")):
-        exp = path.parent.name
-        for row in read_csv(path):
-            by_scope_rows.append({"experiment": exp, "eval_protocol": "full_final_evaluation", **row})
-    summary_fields = ["experiment", "eval_protocol", "scope", "split", "view_count"]
-    for metric in ["l1", "psnr", "ssim", "lpips"]:
-        summary_fields.extend([f"{metric}_mean", f"{metric}_median", f"{metric}_std", f"{metric}_min", f"{metric}_max"])
-    main_rows = [
-        row for row in by_scope_rows
-        if row.get("scope") == "full_image" and row.get("split") == "test"
-    ]
-    write_csv(final_root / "summary_main.csv", main_rows, summary_fields)
-    write_csv(final_root / "summary_by_scope.csv", by_scope_rows, summary_fields)
-    print(json.dumps({
-        "output_root": str(final_root),
-        "experiment_count": len({row["experiment"] for row in by_scope_rows}),
-        "summary_main": str(final_root / "summary_main.csv"),
-        "summary_by_scope": str(final_root / "summary_by_scope.csv"),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
