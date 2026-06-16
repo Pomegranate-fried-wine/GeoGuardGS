@@ -2,7 +2,7 @@
 
 ## 1. Risk source
 
-GeoGuardGS 支持两类风险来源：
+GeoFeedback-GS 支持两类风险来源：
 
 - `da3_boundary`：DA3-unsupervised 主线，使用 DA3 depth edge、rendered edge mismatch、relative ranking 和 boundary-side structure。
 - `lidar_error`：LiDAR-supervised reference，只作为 upper-bound 参考。

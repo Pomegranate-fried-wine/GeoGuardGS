@@ -3,7 +3,7 @@
 ## 主实验
 
 1. Baseline StreetGS。
-2. DA3-only baseline。
+2. No-LiDAR-supervision control（历史上曾称 DA3-only baseline）。
 3. DA3 periodic group softpatch。
 4. DA3 periodic group softpatch + opacity regularization。
 5. DA3 periodic group softpatch + conservative opacity decay。
@@ -20,3 +20,6 @@
 ## 每 500 轮输出
 
 每 500 轮保存可视化和指标，便于判断闭环训练是否稳定。
+# Historical experiment-plan draft
+
+This file is retained as a historical planning note. The canonical current GeoFeedback-GS four-group scheme is in `README.md` and `docs/project_overview.md`.

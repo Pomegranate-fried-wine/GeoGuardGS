@@ -1,4 +1,4 @@
-# GeoGuardGS A100 正式实验指导说明
+# GeoFeedback-GS A100 正式实验指导说明
 
 本文档用于把 `GitHub_main` 迁移到 A100 Linux 服务器后，完成环境安装、数据/权重放置、CUDA 扩展编译、配置安全检查、并行训练、每 500 轮输出和结果收集。
 
@@ -143,7 +143,7 @@ train:
 | 组别 | 配置 | 作用 |
 | --- | --- | --- |
 | A | `a100_baseline_streetgs.yaml` | 原始 StreetGS baseline |
-| B | `a100_da3_only.yaml` | DA3-only baseline，不启用 periodic controller |
+| B | `a100_da3_only.yaml` | No-LiDAR-Supervision Control，不启用 periodic controller；当前 global mode 不应过度表述为严格 DA3-only |
 | C | `a100_da3_periodic_group_softpatch.yaml` | DA3 主方法：周期性 group softpatch |
 | D | `a100_da3_periodic_group_softpatch_opacity_reg.yaml` | C + opacity regularization loss |
 | E | `a100_da3_periodic_group_softpatch_opacity_decay.yaml` | C + conservative opacity decay |
@@ -447,7 +447,7 @@ python scripts/train.py --config configs/smoke/a100_da3_periodic_group_softpatch
 [GaussianControl] disabled; skipping group evidence checks and control logic.
 ```
 
-对于 DA3-only，正常现象是 `feedback_mode=global`，不要求 `signal_path`。
+对于 B 组 no-LiDAR-supervision control，正常现象是 `feedback_mode=global`，不要求 `signal_path`；但由于当前 DA3 structure loss 使用 `feedback_weight > 1.0` 作为激活条件，论文表述中不要过度声称 B 已严格启用 DA3-only 结构监督，除非训练日志确认存在非零 `guided_feedback_da3_structure_loss`。
 对于 periodic group softpatch，50/100 iter smoke 会触发 controller，并在输出目录生成 `feedback_controller/iter_000050/`、`feedback_controller/iter_000100/`。
 
 Depth visualization robustness can be checked with:

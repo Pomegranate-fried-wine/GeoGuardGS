@@ -1,6 +1,6 @@
 # Third-party components
 
-GeoGuardGS builds on several third-party projects. This directory contains
+GeoFeedback-GS builds on several third-party projects. This directory contains
 source snapshots needed for migration and server-side compilation. It must not
 contain datasets, pretrained weights, checkpoints, or local compiled binaries.
 

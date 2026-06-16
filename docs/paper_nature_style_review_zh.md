@@ -1,4 +1,4 @@
-# GeoGuardGS Nature-style Evidence Review
+# GeoFeedback-GS Nature-style Evidence Review
 
 Date: 2026-06-16
 
@@ -17,7 +17,7 @@ uses only the current local result artifacts under
   supports a bounded methods/experimental paper. It cannot prove broad
   generality across datasets or scenes because only the current downloaded
   result package is available.
-- Shared manuscript claim summary: GeoGuardGS explores replacing training-time
+- Shared manuscript claim summary: GeoFeedback-GS explores replacing training-time
   LiDAR supervision in object-aware Street Gaussians with DA3-guided structure
   and periodic feedback, and includes a pure-vision object-aware variant using
   COLMAP background initialization and random-box object initialization.
@@ -123,7 +123,7 @@ Not yet supported:
 
 Not yet supported:
 
-> GeoGuardGS improves 3D geometry or safety-critical object structure across
+> GeoFeedback-GS improves 3D geometry or safety-critical object structure across
 > driving scenes.
 
 ## Reviewer 3: Readability and figure readiness
@@ -189,4 +189,3 @@ The main caveat is:
 5. Add object-region summary table with `valid_object_views=84/245`.
 6. Decide whether the paper targets a methods workshop/conference or a broader
    journal, because the current evidence fits the former more naturally.
-

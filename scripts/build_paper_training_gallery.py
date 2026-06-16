@@ -167,10 +167,10 @@ def build_html(out_dir, rows):
     parts = [
         "<!doctype html>",
         "<meta charset='utf-8'>",
-        "<title>GeoGuardGS Training Gallery</title>",
+        "<title>GeoFeedback-GS Training Gallery</title>",
         "<style>body{font-family:Arial,sans-serif;margin:24px} img{max-width:420px;border:1px solid #ddd} "
         ".grid{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:32px}.card{max-width:440px}.meta{font-size:12px;color:#444}</style>",
-        "<h1>GeoGuardGS Training Gallery</h1>",
+        "<h1>GeoFeedback-GS Training Gallery</h1>",
     ]
     for (iteration, view_key), items in sorted(grouped.items()):
         parts.append(f"<h2>iter_{iteration:06d} / {html.escape(view_key)}</h2>")

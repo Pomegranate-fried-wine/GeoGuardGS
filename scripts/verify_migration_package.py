@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that a GeoGuardGS checkout is ready for GitHub submission/migration."""
+"""Verify that a GeoFeedback-GS checkout is ready for GitHub submission/migration."""
 
 import json
 from pathlib import Path

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safety checker for GeoGuardGS closed-loop configs."""
+"""Safety checker for GeoFeedback-GS closed-loop configs."""
 
 import argparse
 import json

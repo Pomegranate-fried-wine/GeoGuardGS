@@ -119,3 +119,6 @@ train:
 
 Otherwise the loader chooses the first three training views per camera and
 keeps that list fixed for the entire run.
+# Historical experiment-scheme draft
+
+This file is retained as a historical planning note. The canonical current GeoFeedback-GS four-group scheme is in `README.md` and `docs/project_overview.md`.

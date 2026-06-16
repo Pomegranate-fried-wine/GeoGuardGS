@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a paper-ready evidence directory from GeoGuardGS experiment outputs.
+"""Build a paper-ready evidence directory from GeoFeedback-GS experiment outputs.
 
 The script is intentionally conservative: it never fabricates metrics. Missing
 files are recorded in missing_evidence reports so a finished run can be audited
@@ -28,6 +28,7 @@ EXPERIMENT_ORDER = [
     "lidar_init_streetgs_reference",
     "lidar_supervised_reference",
     "hybrid_reference",
+    "pv_da3_feedback_obj",
 ]
 
 METRIC_KEYS = ["AbsRel", "RMSE", "MAE", "delta_lt_1_25", "PSNR", "SSIM", "LPIPS", "rgb_l1", "rgb_mae"]
@@ -176,6 +177,27 @@ def collect_final_evaluation_rows(final_eval_root):
     if summary_by_scope.exists():
         for row in read_csv_rows(summary_by_scope):
             rows.append({"source": str(summary_by_scope), "table": "summary_by_scope", **row})
+    return rows
+
+
+def collect_geometry_evaluation_rows(geometry_eval_root):
+    rows = []
+    if not geometry_eval_root or not geometry_eval_root.exists():
+        return rows
+    candidates = [geometry_eval_root / "compare_geometry_summary.csv"]
+    candidates.extend(sorted(geometry_eval_root.glob("*/summary_geometry_metrics.csv")))
+    for csv_path in candidates:
+        if not csv_path.exists():
+            continue
+        with open(csv_path, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row = dict(row)
+                row.setdefault("source", str(csv_path))
+                row.setdefault("eval_protocol", "held_out_geometry_consistency")
+                if "experiment" not in row or not row["experiment"]:
+                    row["experiment"] = csv_path.parent.name
+                rows.append(row)
     return rows
 
 
@@ -461,6 +483,7 @@ def main():
     parser.add_argument("--output-root", default="outputs/a100_main_experiments")
     parser.add_argument("--paper-dir", default="outputs/paper_evidence_full_scene_v2")
     parser.add_argument("--final-eval-root", default="outputs/final_evaluation_test_only_v2")
+    parser.add_argument("--geometry-eval-root", default="", help="Optional geometry consistency evaluation root.")
     parser.add_argument("--experiments", nargs="*", default=None, help="Optional experiment directory names to include from --output-root.")
     parser.add_argument("--max-figures-per-category", type=int, default=12)
     args = parser.parse_args()
@@ -468,6 +491,7 @@ def main():
     output_root = Path(args.output_root)
     paper_dir = Path(args.paper_dir)
     final_eval_root = Path(args.final_eval_root)
+    geometry_eval_root = Path(args.geometry_eval_root) if args.geometry_eval_root else None
     table_dir = paper_dir / "tables"
     figure_dir = paper_dir / "figures"
     manifest_dir = paper_dir / "manifests"
@@ -534,6 +558,9 @@ def main():
     final_eval_rows = collect_final_evaluation_rows(final_eval_root)
     final_eval_fields = sorted({key for row in final_eval_rows for key in row.keys()} | {"experiment", "eval_protocol", "scope", "split"})
     write_csv(table_dir / "final_full_evaluation_summary.csv", final_eval_rows, final_eval_fields)
+    geometry_eval_rows = collect_geometry_evaluation_rows(geometry_eval_root)
+    geometry_eval_fields = sorted({key for row in geometry_eval_rows for key in row.keys()} | {"experiment", "eval_protocol", "scope", "split"})
+    write_csv(table_dir / "geometry_consistency_summary.csv", geometry_eval_rows, geometry_eval_fields)
 
     summary = {
         "output_root": str(output_root),
@@ -549,6 +576,7 @@ def main():
             "eval_latest_per_view": str(table_dir / "eval_latest_per_view.csv"),
             "train_scalar_trace": str(table_dir / "train_scalar_trace.csv"),
             "final_full_evaluation_summary": str(table_dir / "final_full_evaluation_summary.csv"),
+            "geometry_consistency_summary": str(table_dir / "geometry_consistency_summary.csv"),
             "safety_audit_summary": str(table_dir / "safety_audit_summary.csv"),
             "repair_candidate_summary": str(table_dir / "repair_candidate_summary.csv"),
             "figure_index": str(table_dir / "figure_index.csv"),
@@ -559,6 +587,7 @@ def main():
             "Metrics are copied or summarized only from existing run outputs.",
             "Training-time eval_summary.csv combines sampled_diagnostic_eval and full_split_training_eval rows when available; final_full_evaluation_summary.csv remains the paper-grade main result.",
             "The default final evaluation root is outputs/final_evaluation_test_only_v2; use --final-eval-root to collect a different evaluation directory.",
+            "Use --geometry-eval-root to include held-out geometry consistency summaries when available.",
             "Paper main results should use final_full_evaluation_summary.csv when available.",
             "DA3-unsupervised paper claims should require uses_lidar_supervision=false and uses_lidar_selected_pixels=false in safety/feedback tables.",
             "No-LiDAR initialization claims should require uses_lidar_initialization=false in initialization_summary.csv.",
@@ -570,11 +599,12 @@ def main():
 
     readme = paper_dir / "README.md"
     readme.write_text(
-        "# GeoGuardGS Paper Evidence Pack\n\n"
+        "# GeoFeedback-GS Paper Evidence Pack\n\n"
         "Generated by `scripts/build_paper_evidence_pack.py`.\n\n"
         "## Tables\n\n"
         "- `tables/main_final_metrics.csv`: final/global experiment metrics.\n"
         "- `tables/final_full_evaluation_summary.csv`: paper-grade full final evaluation summary when available.\n"
+        "- `tables/geometry_consistency_summary.csv`: held-out geometry consistency summary when available.\n"
         "- `tables/initialization_summary.csv`: initialization source and LiDAR-init leakage audit.\n"
         "- `tables/eval_summary.csv`: training evaluation rows with `eval_protocol` set to sampled diagnostic or full-split training eval.\n"
         "- `tables/eval_latest_per_view.csv`: latest per-view evaluation diagnostics.\n"

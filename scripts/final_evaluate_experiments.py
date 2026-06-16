@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run paper-grade final evaluation for GeoGuardGS/StreetGS experiments.
+"""Run paper-grade final evaluation for GeoFeedback-GS/StreetGS experiments.
 
 The default protocol evaluates the held-out test split only. Training split
 evaluation is available with ``--splits test train`` but is intentionally not

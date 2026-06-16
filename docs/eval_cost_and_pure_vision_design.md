@@ -167,3 +167,6 @@ Success criteria for the smoke:
 - object branch is active and vehicles are visible in panels;
 - RGB/depth panels do not collapse by 3000 iterations;
 - DA3 feedback manifests report no LiDAR selected pixels or supervision.
+# Historical evaluation-cost and pure-vision design note
+
+This file is retained as a historical planning note. The canonical current GeoFeedback-GS four-group scheme is in `README.md` and `docs/project_overview.md`.

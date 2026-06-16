@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect compact metrics and manifests from GeoGuardGS experiment outputs."""
+"""Collect compact metrics and manifests from GeoFeedback-GS experiment outputs."""
 
 import argparse
 import json

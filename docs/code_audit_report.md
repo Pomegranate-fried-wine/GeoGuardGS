@@ -1,6 +1,6 @@
 # 代码审查报告
 
-审查对象为当前 `street_gaussians-main` 中与 GeoGuardGS 相关的核心模块。
+审查对象为当前 `street_gaussians-main` 中与 GeoFeedback-GS 相关的核心模块。
 
 ## 已完成模块
 

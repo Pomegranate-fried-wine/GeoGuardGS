@@ -1,4 +1,4 @@
-# Draft Manuscript: GeoGuardGS
+# Draft Manuscript: GeoFeedback-GS
 
 Working title options:
 
@@ -73,7 +73,7 @@ is important for comparing methods that claim reduced sensor dependence, and it
 is especially important for object branches, where vehicles may disappear if
 object modeling is disabled or if initialization is too weak.
 
-GeoGuardGS builds on StreetGS with DA3-guided structural signals and a periodic
+GeoFeedback-GS builds on StreetGS with DA3-guided structural signals and a periodic
 feedback controller. DA3 provides image-derived depth, edge, and risk cues,
 while the feedback controller periodically groups high-risk regions and
 activates softpatch supervision. We evaluate this design through four formal
@@ -196,7 +196,7 @@ paper from a bounded experimental report into a more general method claim.
 
 ## Conclusion draft
 
-GeoGuardGS provides an audited experimental framework for studying LiDAR
+GeoFeedback-GS provides an audited experimental framework for studying LiDAR
 dependency in object-aware street Gaussian reconstruction. In the current
 formal evaluation, the pure-vision DA3+Feedback configuration achieved
 competitive held-out RGB rendering while avoiding both LiDAR initialization and
@@ -225,4 +225,3 @@ robustness require additional evidence.
 - Final quantitative depth/geometry metrics are absent.
 - Cross-scene evidence is absent.
 - A formal related-work section needs citations selected by the author.
-

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified evaluation launcher placeholder for GeoGuardGS."""
+"""Unified evaluation launcher placeholder for GeoFeedback-GS."""
 
 import argparse
 import subprocess

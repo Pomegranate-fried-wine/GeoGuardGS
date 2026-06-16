@@ -86,7 +86,7 @@ def run_command(cmd):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="", help="Optional GeoGuardGS yaml config.")
+    parser.add_argument("--config", default="", help="Optional GeoFeedback-GS yaml config.")
     parser.add_argument("--colmap-bin", default="", help="Override COLMAP executable.")
     parser.add_argument("--json-out", default="")
     parser.add_argument("--check-gui", action="store_true", help="Also run 'colmap gui -h'.")

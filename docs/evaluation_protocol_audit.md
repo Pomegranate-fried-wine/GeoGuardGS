@@ -61,7 +61,7 @@ Local code references:
   train/test cameras using `split_train` / `split_test`; object masks are
   stored as `guidance["obj_bound"]`.
 
-## GeoGuardGS formal evaluation plan
+## GeoFeedback-GS formal evaluation plan
 
 Training-time `periodic_eval` and `eval_summary.csv` remain diagnostics.
 Main paper results must use final held-out test evaluation by default:

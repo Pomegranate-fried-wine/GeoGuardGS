@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch GeoGuardGS A100 experiments.
+"""Launch GeoFeedback-GS A100 experiments.
 
 This script is intentionally lightweight: it creates experiment manifests,
 assigns configs to GPU ids, and either prints commands or starts subprocesses.

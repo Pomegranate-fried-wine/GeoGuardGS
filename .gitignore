@@ -1,10 +1,19 @@
 # Data and weights
+data/*
+!data/.gitkeep
+!data/README.md
+!data/waymo/
 data/waymo/*
 !data/waymo/.gitkeep
 !data/waymo/README.md
+weights/*
+!weights/.gitkeep
+!weights/README.md
+!weights/da3/
 weights/da3/*
 !weights/da3/.gitkeep
 !weights/da3/README.md
+!weights/streetgs/
 weights/streetgs/*
 !weights/streetgs/.gitkeep
 !weights/streetgs/README.md
@@ -19,6 +28,9 @@ checkpoints/*
 *.pkl
 *.npz
 *.npy
+*.tar
+*.tar.gz
+*.zip
 
 # Logs, trackers, and caches
 *.log
@@ -42,9 +54,21 @@ build/
 *.mov
 *.mkv
 *.exr
+*.pptx
+*.pdf
+*.tif
+*.tiff
+
+# Local result review bundles
+geometry_eval*/
+server_results_review/
+ppt_picture/
+formal_4groups_*
+*_final_eval_*
 
 # Local machine files
 .env
+.venv/
 .vscode/
 .idea/
 Thumbs.db

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Chinese PPTX deck for GeoGuardGS formal four-group results."""
+"""Build a Chinese PPTX deck for GeoFeedback-GS formal four-group results."""
 
 import csv
 import json
@@ -15,9 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULT_ROOT = ROOT / "server_results_review" / "paper_results_formal_4groups_v2"
 EVIDENCE_ROOT = ROOT / "server_results_review" / "paper_evidence_formal_4groups_v2"
 OUT_DIR = ROOT / "outputs" / "ppt_zh_geoguardgs"
-OUT_PPTX = OUT_DIR / "GeoGuardGS_formal_results_zh.pptx"
-OUT_NOTES = OUT_DIR / "GeoGuardGS_formal_results_zh_speaker_notes.md"
-OUT_QA = OUT_DIR / "GeoGuardGS_formal_results_zh_qa.json"
+OUT_PPTX = OUT_DIR / "GeoFeedback-GS_formal_results_zh.pptx"
+OUT_NOTES = OUT_DIR / "GeoFeedback-GS_formal_results_zh_speaker_notes.md"
+OUT_QA = OUT_DIR / "GeoFeedback-GS_formal_results_zh_qa.json"
 TEMPLATE_GLOB = "*PPT.pptx"
 
 
@@ -74,7 +74,7 @@ def add_title(slide, title, subtitle=None):
 
 def add_footer(slide, idx):
     box = slide.shapes.add_textbox(Cm(28.7), Cm(18.35), Cm(3.7), Cm(0.35))
-    set_text(box, f"GeoGuardGS | {idx:02d}", size=7.5, color=MUTED, align=PP_ALIGN.RIGHT)
+    set_text(box, f"GeoFeedback-GS | {idx:02d}", size=7.5, color=MUTED, align=PP_ALIGN.RIGHT)
 
 
 def add_bullets(slide, x, y, w, h, items, size=14, color=INK, gap=0.08):
@@ -212,7 +212,7 @@ def main():
     slide.background.fill.solid()
     slide.background.fill.fore_color.rgb = rgb("F7F9FC")
     title = slide.shapes.add_textbox(Cm(1.5), Cm(3.1), Cm(25), Cm(1.8))
-    set_text(title, "GeoGuardGS：面向自动驾驶场景的 LiDAR 依赖审计与 DA3 反馈重建", size=28, bold=True)
+    set_text(title, "GeoFeedback-GS：基于责任高斯反馈的低 LiDAR 依赖动态街景高斯重建", size=28, bold=True)
     sub = slide.shapes.add_textbox(Cm(1.55), Cm(5.25), Cm(23), Cm(1.0))
     set_text(sub, "正式四组实验结果汇报 | StreetGS / DA3-only / DA3+Feedback / Pure-Vision DA3+Feedback", size=13, color=MUTED)
     add_card(slide, 1.6, 7.2, 9.0, 3.8, "核心结论", "PV-C 在无 LiDAR 初始化和无 LiDAR 监督条件下，保持了与 LiDAR 初始化 baseline 接近的 held-out RGB 指标。", GREEN)
@@ -249,7 +249,7 @@ def main():
     notes.append("3. 这一页是论文实验设计的核心。")
 
     # 4
-    slide = base_slide(prs, 4, "GeoGuardGS 方法概览：DA3 信号 + 周期反馈")
+    slide = base_slide(prs, 4, "GeoFeedback-GS 方法概览：DA3 信号 + 周期反馈")
     x0, y0 = 1.6, 4.0
     steps = [
         ("输入图像/相机", BLUE),
@@ -383,7 +383,7 @@ def main():
         "C/PV-C 的 feedback controller 已稳定运行，但性能提升 claim 需要更强 ablation 和几何指标。",
         "推荐题目方向：Auditing LiDAR dependency in object-aware street Gaussian reconstruction with DA3-guided feedback。",
     ], size=16)
-    add_card(slide, 2.2, 10.7, 28.2, 3.4, "一句话结论", "GeoGuardGS 当前结果足以支撑一篇有边界的实验/方法论文初稿；补充 loss、geometry、多场景后，可升级为更强主张。", GREEN)
+    add_card(slide, 2.2, 10.7, 28.2, 3.4, "一句话结论", "GeoFeedback-GS 当前结果足以支撑一篇有边界的实验/方法论文初稿；补充 loss、geometry、多场景后，可升级为更强主张。", GREEN)
     notes.append("14. 结尾回到可写论文与证据边界。")
 
     prs.save(OUT_PPTX)

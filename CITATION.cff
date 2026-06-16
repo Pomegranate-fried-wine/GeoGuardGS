@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: If you use this code, please cite the project and the original third-party works.
-title: "GeoGuardGS: Closed-Loop Geometry-Responsible Gaussian Control for Street Scene Reconstruction"
+title: "GeoFeedback-GS: LiDAR-Reduced Dynamic Street Gaussian Reconstruction with Responsible Gaussian Feedback"
 version: 0.1.0
 authors:
   - family-names: Han

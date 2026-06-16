@@ -1,203 +1,122 @@
-# GeoGuardGS
+# GeoFeedback-GS
 
-**GeoGuardGS: Closed-Loop Geometry-Responsible Gaussian Control for Street Scene Reconstruction**
+**GeoFeedback-GS: LiDAR-Reduced Dynamic Street Gaussian Reconstruction with Responsible Gaussian Feedback**
 
-**GeoGuardGS：面向街景重建的闭环几何责任高斯控制框架**
+**GeoFeedback-GS：基于责任高斯反馈的低 LiDAR 依赖动态街景高斯重建**
 
-GeoGuardGS 是一个面向自动驾驶街景 Gaussian 重建的研究型开源工程。它的目标不是简单把 DA3 depth prior 接入 Street Gaussian，也不是继续堆叠 boundary loss / depth loss，而是构建一条更可解释、更可审计的几何责任诊断与训练反馈路线：
+GeoFeedback-GS is a research codebase for studying how LiDAR dependency can be reduced in object-aware dynamic street Gaussian reconstruction. It is not a new renderer from scratch. The project builds on a Street Gaussians-style framework and adds audited experiment settings, DA3 relative-structure guidance, responsible Gaussian feedback, held-out evaluation, and paper-facing result packaging.
 
-```text
-几何风险区域
--> 真实渲染贡献 T * alpha
--> 责任 Gaussian group
--> 周期性训练反馈
--> 保守 Gaussian 控制
--> 安全评估与审计
-```
+The current project focus is deliberately bounded: reduce and audit LiDAR usage while preserving dynamic vehicle modeling. We separate LiDAR usage into three roles:
 
-当前版本重点提供一个可迁移到 A100 服务器正式训练的完整工程包：包含 StreetGS 兼容训练入口、DA3 结构反馈、live CUDA selected-pixel contribution dump、周期性 feedback controller、统一 GaussianControlManager、GaussianRepairOperator、安全门检查、A100 实验配置、每 500 轮输出规范和结果收集脚本。
+1. **LiDAR initialization**: whether background/object Gaussians are initialized from LiDAR point clouds.
+2. **LiDAR training supervision**: whether LiDAR depth is used as a training loss or selected-pixel risk source.
+3. **LiDAR evaluation reference**: whether held-out LiDAR is used only after training for geometry evaluation.
 
-## 1. 项目定位
+This distinction is important. A method can remove LiDAR training supervision while still using LiDAR initialization, and a LiDAR-free training setup may still rely on camera poses, SfM/COLMAP, and object track boxes.
 
-GeoGuardGS 面向的问题是：在动态街景 Gaussian 重建中，车辆边界、遮挡边界、树干、电线杆、远处薄结构和深度突变处往往出现局部几何不可信。只看全局 RGB 指标或全图平均 depth loss，无法回答：
+## Overview
 
-- 哪些像素区域存在几何风险？
-- 哪些 Gaussian 真实参与了这些风险像素的渲染？
-- 这些 Gaussian 是边界支撑者、错误混叠者，还是低证据噪声？
-- 诊断结果能否周期性反馈回训练，而不是只做离线可视化？
+GeoFeedback-GS studies four formal experiment groups:
 
-GeoGuardGS 因此把研究重点从“加一个 loss”推进到：
+| Group | Name | Initialization | Training supervision | Feedback | Role |
+| --- | --- | --- | --- | --- | --- |
+| A | LiDAR-supervised StreetGS Reference | COLMAP + LiDAR background/object initialization | RGB + LiDAR depth supervision | No | Reference setting close to the original StreetGS-style LiDAR-assisted pipeline |
+| B | No-LiDAR-Supervision Control | COLMAP + LiDAR initialization | RGB/object training without LiDAR depth supervision | No periodic feedback | Controls the effect of removing LiDAR training supervision |
+| C | LiDAR-init GeoFeedback-GS | COLMAP + LiDAR initialization | No LiDAR depth supervision; DA3 relative-structure loss activated by softpatch feedback | Yes | Tests responsible Gaussian feedback under LiDAR initialization |
+| PV-C | LiDAR-free GeoFeedback-GS | COLMAP background + random-box object initialization | No LiDAR initialization and no LiDAR depth supervision; DA3 relative-structure loss activated by softpatch feedback | Yes | Tests LiDAR-free object-aware reconstruction under pose-and-box supervision |
 
-```text
-risk map -> contribution capture -> group responsibility -> feedback/control
-```
+Important implementation note for B: the current `global` guided-feedback mode may not activate DA3 structure pixels because the implemented DA3 structure loss selects pixels with `feedback_weight > 1.0`, while global mode returns all-one weights. Therefore B should be described as a no-LiDAR-supervision control unless logs confirm non-zero `guided_feedback_da3_structure_loss`.
 
-## 2. 方法概览
+## Key Idea
 
-核心闭环如下：
+GeoFeedback-GS adds a responsible Gaussian feedback loop:
 
 ```text
-Street Gaussian training
--> DA3 / LiDAR risk source
--> selected high-risk pixels
--> live CUDA T*alpha contribution dump
--> boundary-aware Gaussian group responsibility
--> unified GroupEvidence
--> periodic feedback controller
--> group softpatch feedback
--> GaussianControlManager
--> GaussianRepairOperator
--> safe opacity decay / dry-run repair candidates
--> evaluation and audit
+risk region selection
+-> responsible Gaussian group attribution
+-> softpatch region weight map
+-> DA3 relative-structure loss on selected regions
+-> periodic audit outputs
 ```
 
-### 2.1 DA3-unsupervised 主线
+DA3 is not treated as metric depth ground truth. The training signal is a relative structure prior:
 
-DA3 在本项目中不是 metric depth ground truth。DA3 主线只使用：
+- edge consistency,
+- local depth ranking consistency,
+- boundary-side consistency.
 
-- depth edge；
-- boundary-risk；
-- rendered / DA3 edge mismatch；
-- relative depth ranking；
-- boundary-side structure consistency。
+The feedback loss is not an independent new loss. In the implemented training path, feedback creates a region/pixel weight map. The selected softpatch regions receive weights greater than one, and these weights activate/modulate the DA3 structure loss.
 
-DA3-unsupervised 训练阶段必须满足：
+## Method Pipeline
 
-```yaml
-train.guided_feedback.use_lidar_depth: false
-optim.lambda_depth_lidar: 0.0
-train.feedback_controller.risk_source: da3_boundary
-```
-
-LiDAR 只能用于 evaluation，不参与 DA3 主线训练监督、risk pixel selection 或 bad/good labeling。
-
-### 2.2 LiDAR-supervised reference
-
-LiDAR-supervised 分支是上界参考。它允许使用 sparse LiDAR valid pixels 做训练或风险区域选择，但不能作为 DA3-unsupervised 主方法的结论来源。
-
-### 2.3 Live CUDA contribution
-
-传统 screen-space overlap 只能说明某个 Gaussian 投影覆盖了高误差区域，不能证明它真实参与渲染。GeoGuardGS 使用 selected-pixel CUDA debug dump，在指定风险像素上记录：
-
-- stable Gaussian id；
-- view-local id；
-- alpha；
-- transmittance；
-- contribution weight `T * alpha`；
-- depth；
-- depth order；
-- support pixel count。
-
-这让责任归因从“投影相关性”升级为“真实渲染贡献证据”。
-
-### 2.4 Boundary-aware group responsibility
-
-DA3 分支不对单个 Gaussian 做过度激进的 hard bad/good 判定，而是在 DA3 boundary-risk patch 内聚合 Gaussian group。group score 参考：
+The main training path is:
 
 ```text
-score = T*alpha * DA3Risk * EdgeMismatch * SupportFactor
+StreetGS-style object-aware rendering
+-> RGB/object/regularization losses
+-> optional LiDAR depth loss for A only
+-> DA3 bridge for relative depth structure
+-> periodic feedback controller for C and PV-C
+-> feedback_signal.json
+-> GuidedFeedbackController.update_signal_path(...)
+-> softpatch region weight map
+-> da3_edge_loss + da3_ranking_loss + da3_side_loss
+-> guided_feedback_da3_structure_loss
 ```
 
-典型 group 标签：
+The relevant implementation files are:
 
-- `bad_boundary_mixing_group`
-- `bad_edge_blurring_group`
-- `bad_ranking_conflict_group`
-- `good_boundary_support_group`
-- `rgb_protect_group`
-- `neutral_group`
-- `low_evidence_group`
+- `third_party/street_gaussian/train.py`
+  - `compute_guided_feedback_loss`
+  - `compute_da3_structure_guided_loss`
+- `third_party/street_gaussian/lib/utils/da3_structure_feedback_utils.py`
+  - `make_da3_bridge`
+  - `da3_structure_loss`
+  - `da3_edge_loss`
+  - `da3_ranking_loss`
+  - `da3_side_loss`
+- `third_party/street_gaussian/lib/utils/guided_feedback_utils.py`
+  - `GuidedFeedbackController`
+  - `make_region_weight_map`
+  - `feedback_weight > 1.0` activation behavior
+- `third_party/street_gaussian/lib/utils/feedback_controller.py`
+  - periodic trigger and feedback signal loading
+- `third_party/street_gaussian/lib/models/gaussian_model_actor.py`
+  - PV-C random-box actor Gaussian initialization fallback
 
-### 2.5 Gaussian control
+## Experiment Design
 
-统一的 GaussianControlManager 读取 GroupEvidence，不区分证据来自 DA3 还是 LiDAR。当前支持：
-
-- protect-only；
-- opacity regularization loss；
-- config-gated conservative opacity decay；
-- prune / shrink / split dry-run candidate tagging。
-
-当前不启用真实 prune / shrink / split。
-
-## 3. 当前版本能力边界
-
-已经补齐：
-
-- StreetGS 兼容训练入口；
-- DA3 Bridge / DA3 structure feedback；
-- LiDAR-valid evaluation；
-- live selected-pixel CUDA contribution dump；
-- DA3 boundary-aware group responsibility；
-- periodic feedback controller；
-- group softpatch feedback；
-- unified GroupEvidence；
-- GaussianControlManager；
-- opacity regularization；
-- config-gated opacity_decay_apply；
-- GaussianRepairOperator dry-run；
-- A100 正式实验配置；
-- 每 500 轮输出规范；
-- config safety checker；
-- LiDAR leakage checker；
-- repair safety checker；
-- migration package verifier；
-- 第三方源码迁移目录。
-
-仍然没有启用：
-
-- real prune；
-- real shrink；
-- real split；
-- real surface-align；
-- DA3 多帧动态几何主线；
-- SOTA 级最终指标结论。
-
-也就是说，除了真实高斯结构操作 prune / shrink / split / surface-align 之外，当前闭环工程、迁移训练配置和安全检查已经基本补齐。
-
-## 4. 目录结构
+The formal experiments are configured under `configs/experiments/`:
 
 ```text
-GitHub_main/
-  configs/
-    base/
-    experiments/
-  docs/
-  geoguardgs/
-    contribution/
-    feedback/
-    gaussian_control/
-    gaussian_repair/
-    evaluation/
-    training/
-  scripts/
-  scripts/research_archive/
-  third_party/
-    street_gaussian/
-    diff_gaussian_rasterization/
-    simple_knn/
-    simple_waymo_open_dataset_reader/
-    depth_anything_3/
-    nvdiffrast/
-  data/waymo/
-  weights/da3/
-  weights/streetgs/
-  outputs/
+configs/experiments/a100_baseline_streetgs.yaml
+configs/experiments/a100_da3_only.yaml
+configs/experiments/a100_da3_periodic_group_softpatch.yaml
+configs/experiments/a100_pv_da3_feedback_obj.yaml
 ```
 
-`scripts/` 根目录是正式迁移训练入口。`scripts/research_archive/` 只保留历史研究脚本，可能包含 A5000 / p15 / local output 默认路径，不作为 A100 正式入口。
+The current recommended interpretation is:
 
-## 5. 安装
+- **A** is the LiDAR-supervised StreetGS reference.
+- **B** removes training-time LiDAR supervision while retaining LiDAR initialization; do not overstate it as a fully active DA3-only method unless training logs confirm active DA3 loss.
+- **C** uses LiDAR initialization, no LiDAR training supervision, and feedback-activated DA3 relative-structure loss.
+- **PV-C** uses COLMAP background initialization, random-box object initialization, no LiDAR initialization, no LiDAR training supervision, and feedback-activated DA3 relative-structure loss.
 
-推荐在 A100 Linux 服务器上执行：
+PV-C should be described as **LiDAR-free under pose-and-box supervision**, not as fully unconstrained monocular reconstruction. It still uses camera poses, COLMAP/SfM background points, and object track boxes.
+
+## Installation
+
+Recommended environment: Linux server with CUDA and A100-class GPUs.
 
 ```bash
-cd /path/to/GitHub_main
+git clone <repo-url> GeoFeedback-GS
+cd GeoFeedback-GS
 conda env create -f environment.yml
 conda activate geoguardgs
 pip install -r requirements.txt
 ```
 
-然后重新编译服务器本地 CUDA/C++ 扩展：
+Rebuild CUDA/C++ extensions on the target server:
 
 ```bash
 bash scripts/install_server_extensions.sh
@@ -205,132 +124,251 @@ python scripts/check_imports.py
 python scripts/verify_migration_package.py
 ```
 
-必须重新编译的组件：
+The main extensions that may require local compilation are:
 
-- `third_party/diff_gaussian_rasterization`
-- `third_party/simple_knn`
-- `third_party/nvdiffrast`，如果当前配置或依赖使用
-- `third_party/simple_waymo_open_dataset_reader`，如果服务器需要该 reader
+- `third_party/street_gaussian/submodules/diff-gaussian-rasterization` or the migrated rasterizer path used by the checkout,
+- `third_party/simple_knn`,
+- `third_party/nvdiffrast` if enabled,
+- Waymo reader dependencies if required by the server setup.
 
-不要提交本地编译产物，例如 `.so`、`.pyd`、`.dll`、`build/`、`*.egg-info/`。
+Do not commit compiled `.so`, `.pyd`, `.dll`, `build/`, or `*.egg-info` artifacts.
 
-## 6. 数据与权重
+## Data Preparation
 
-本仓库不包含 Waymo 数据、DA3 权重和大型 checkpoint。
+This repository does not include Waymo data, DA3 weights, COLMAP outputs, large checkpoints, or training results.
 
-请手动准备：
+Expected local layout:
 
 ```text
-data/waymo/<scene_id>/
-weights/da3/DA3-LARGE-1.1/
-weights/streetgs/<optional_checkpoint>/
+data/
+  waymo/
+    002/
+weights/
+  da3/
+    DA3-LARGE-1.1/
+  streetgs/
+outputs/
 ```
 
-Waymo LiDAR 必须保留 sparse valid mask。所有 LiDAR 指标只能在 `valid_lidar=True` 像素上计算，不能把 invalid LiDAR 当作 depth 0。
-
-## 7. 正式实验配置
-
-当前提供：
-
-- `configs/experiments/a100_baseline_streetgs.yaml`
-- `configs/experiments/a100_da3_only.yaml`
-- `configs/experiments/a100_da3_periodic_group_softpatch.yaml`
-- `configs/experiments/a100_da3_periodic_group_softpatch_opacity_reg.yaml`
-- `configs/experiments/a100_da3_periodic_group_softpatch_opacity_decay.yaml`
-- `configs/experiments/a100_lidar_supervised_reference.yaml`
-- `configs/experiments/a100_hybrid_reference.yaml`
-
-每个配置默认遵守安全门。DA3 主线不使用 LiDAR training loss。真实 prune / shrink / split 全部关闭。
-
-## 8. 启动实验
-
-先做配置检查：
+For COLMAP initialization, provide a working COLMAP binary either through config or environment:
 
 ```bash
-python scripts/check_closed_loop_config.py \
-  --config configs/experiments/a100_da3_periodic_group_softpatch.yaml
-
-python scripts/validate_no_lidar_leakage.py \
-  configs/experiments/a100_da3_periodic_group_softpatch.yaml
-
-python scripts/validate_repair_safety.py \
-  configs/experiments/a100_da3_periodic_group_softpatch_opacity_decay.yaml
+export COLMAP_BIN=/path/to/colmap
+python scripts/check_colmap_environment.py --config configs/experiments/a100_pv_da3_feedback_obj.yaml
 ```
 
-并行 dry-run：
+## Training Commands
+
+All commands below stream logs to the console and save them with `tee`. Choose idle GPUs through `CUDA_VISIBLE_DEVICES`.
+
+### A: LiDAR-supervised StreetGS Reference
 
 ```bash
-python scripts/launch_a100_experiments.py \
+CUDA_VISIBLE_DEVICES=4 python scripts/train.py \
+  --config configs/experiments/a100_baseline_streetgs.yaml \
+  2>&1 | tee logs/A_lidar_supervised_streetgs.log
+```
+
+Output:
+
+```text
+outputs/a100_main_experiments/baseline_streetgs/
+```
+
+### B: No-LiDAR-Supervision Control
+
+```bash
+CUDA_VISIBLE_DEVICES=5 python scripts/train.py \
+  --config configs/experiments/a100_da3_only.yaml \
+  2>&1 | tee logs/B_no_lidar_supervision_control.log
+```
+
+Output:
+
+```text
+outputs/a100_main_experiments/da3_only/
+```
+
+### C: LiDAR-init GeoFeedback-GS
+
+```bash
+CUDA_VISIBLE_DEVICES=6 python scripts/train.py \
+  --config configs/experiments/a100_da3_periodic_group_softpatch.yaml \
+  2>&1 | tee logs/C_lidar_init_geofeedback_gs.log
+```
+
+Output:
+
+```text
+outputs/a100_main_experiments/da3_periodic_group_softpatch/
+```
+
+### PV-C: LiDAR-free GeoFeedback-GS
+
+```bash
+CUDA_VISIBLE_DEVICES=7 python scripts/train.py \
+  --config configs/experiments/a100_pv_da3_feedback_obj.yaml \
+  2>&1 | tee logs/PVC_lidar_free_geofeedback_gs.log
+```
+
+Output:
+
+```text
+outputs/a100_main_experiments/pv_da3_feedback_obj/
+```
+
+Before long runs, validate configs:
+
+```bash
+python scripts/check_closed_loop_config.py --config configs/experiments/a100_baseline_streetgs.yaml
+python scripts/check_closed_loop_config.py --config configs/experiments/a100_da3_only.yaml
+python scripts/check_closed_loop_config.py --config configs/experiments/a100_da3_periodic_group_softpatch.yaml
+python scripts/check_closed_loop_config.py --config configs/experiments/a100_pv_da3_feedback_obj.yaml
+```
+
+## Evaluation Commands
+
+### Final held-out RGB evaluation
+
+Use the held-out test split as the main paper table source:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/final_evaluate_experiments.py \
   --configs \
     configs/experiments/a100_baseline_streetgs.yaml \
     configs/experiments/a100_da3_only.yaml \
     configs/experiments/a100_da3_periodic_group_softpatch.yaml \
-    configs/experiments/a100_da3_periodic_group_softpatch_opacity_reg.yaml \
-    configs/experiments/a100_da3_periodic_group_softpatch_opacity_decay.yaml \
-    configs/experiments/a100_lidar_supervised_reference.yaml \
-  --gpus 0,1,2,3 \
-  --output-root outputs/a100_main_experiments \
-  --dry-run
+    configs/experiments/a100_pv_da3_feedback_obj.yaml \
+  --output-root outputs/final_evaluation_test_only_v2 \
+  --loaded-iter 30000 \
+  --splits test \
+  2>&1 | tee logs/final_eval_test_only_v2.log
 ```
 
-正式运行去掉 `--dry-run`。
+Expected outputs:
 
-## 9. 每 500 轮输出
+```text
+outputs/final_evaluation_test_only_v2/
+  summary_main.csv
+  summary_by_scope.csv
+  <experiment>/
+    metrics_full_image.csv
+    metrics_object_region.csv
+    metrics_background_region.csv
+    figures/
+```
 
-正式 A100 配置中，每 500 轮应保存：
+### Geometry consistency evaluation
 
-- rendered RGB；
-- GT RGB；
-- RGB error；
-- rendered depth；
-- DA3 depth；
-- LiDAR sparse overlay；
-- depth error map；
-- DA3 boundary-risk map；
-- selected risk regions；
-- contribution top-K overlay；
-- group responsibility overlay；
-- Gaussian control summary；
-- repair safety manifest；
-- RGB metrics；
-- LiDAR-valid geometry metrics；
-- DA3 structure metrics；
-- responsibility/control metrics。
-
-详细规范见 `docs/output_specification.md`。
-
-## 10. 核心文档
-
-- `docs/project_overview.md`：项目定位与技术路线。
-- `docs/method.md`：方法设计。
-- `docs/server_a100_experiment_guide.md`：A100 正式实验说明。
-- `docs/output_specification.md`：输出与指标规范。
-- `docs/safety_gates.md`：安全门。
-- `docs/code_audit_report.md`：代码审查。
-- `docs/data_and_weights.md`：数据与权重。
-- `docs/references.md`：参考文献占位。
-
-## 11. 快速自检
-
-提交 GitHub 或迁移服务器前运行：
+This evaluation uses held-out LiDAR only as an evaluation reference. It should not be mixed with training supervision claims.
 
 ```bash
-python scripts/verify_migration_package.py
-python scripts/check_closed_loop_config.py --config configs/experiments/a100_da3_periodic_group_softpatch.yaml
-python scripts/validate_no_lidar_leakage.py configs/experiments/a100_da3_periodic_group_softpatch.yaml
-python scripts/validate_repair_safety.py configs/experiments/a100_da3_periodic_group_softpatch_opacity_decay.yaml
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_geometry_consistency.py \
+  --configs \
+    configs/experiments/a100_baseline_streetgs.yaml \
+    configs/experiments/a100_da3_only.yaml \
+    configs/experiments/a100_da3_periodic_group_softpatch.yaml \
+    configs/experiments/a100_pv_da3_feedback_obj.yaml \
+  --output-root outputs/geometry_eval_test_only_v1 \
+  --loaded-iter 30000 \
+  --split test \
+  2>&1 | tee logs/geometry_eval_test_only_v1.log
 ```
 
-如果这些检查失败，不要启动正式训练。
+Expected outputs:
 
-## 12. License 与第三方声明
+```text
+outputs/geometry_eval_test_only_v1/
+  compare_geometry_summary.csv
+  <experiment>/
+    per_view_geometry_metrics.csv
+    summary_geometry_metrics.csv
+    visualization_panels/
+```
 
-GeoGuardGS 主体代码使用 MIT License。第三方代码、数据集和模型权重可能有独立许可证。请在公开发布前核对：
+### Paper evidence pack
 
-- Street Gaussian；
-- Depth Anything 3；
-- diff-gaussian-rasterization；
-- nvdiffrast；
-- Waymo Open Dataset。
+After final evaluation and geometry evaluation:
 
-精确引用信息请在论文提交前核验，当前 `docs/references.md` 中保留了 TODO 占位。
+```bash
+python scripts/build_paper_evidence_pack.py \
+  --output-root outputs/a100_main_experiments \
+  --final-eval-root outputs/final_evaluation_test_only_v2 \
+  --geometry-eval-root outputs/geometry_eval_test_only_v1 \
+  --paper-dir outputs/paper_evidence_geofeedback_gs
+
+python scripts/build_paper_result_visuals.py \
+  --paper-dir outputs/paper_evidence_geofeedback_gs
+```
+
+### Training galleries
+
+The fixed-view periodic panels are training diagnostics, not the final paper metric protocol:
+
+```bash
+python scripts/build_paper_training_gallery.py \
+  --output-root outputs/paper_training_gallery_geofeedback_gs
+```
+
+## Repository Structure
+
+```text
+GeoFeedback-GS/
+  assets/                         # lightweight static assets only
+  configs/
+    base/                         # shared config defaults
+    experiments/                  # formal A/B/C/PV-C configs
+    experiments_pure_vision/      # PV-C config chain
+    short_5000/                   # short diagnostic configs
+    smoke/                        # smoke-test configs
+  data/                           # local data mount point, ignored by git
+  docs/                           # protocol notes, audits, drafts, server guide
+  geoguardgs/                     # project helper modules retained under historical package name
+  scripts/                        # official entrypoints and packaging utilities
+  third_party/                    # StreetGS-style framework and dependencies
+  weights/                        # local weights mount point, ignored by git
+  outputs/                        # local outputs, ignored by git
+```
+
+Some internal package names and historical file paths still contain `geoguardgs`. They are retained to avoid breaking existing configs, imports, and server scripts. The repository-facing project name is GeoFeedback-GS.
+
+## Results Summary
+
+Current single-scene Waymo held-out experiments support a bounded claim:
+
+- PV-C can train with object-aware dynamic reconstruction while using no LiDAR initialization and no LiDAR training supervision.
+- On the current held-out test split, PV-C reaches RGB PSNR/SSIM close to or slightly above the LiDAR-supervised StreetGS reference.
+- C and PV-C successfully exercise the periodic responsible-feedback chain and produce audit artifacts.
+
+Do not overstate the result:
+
+- It does not prove that GeoFeedback-GS comprehensively outperforms StreetGS.
+- It does not prove absolute metric geometry is solved.
+- It does not establish cross-scene generalization.
+- Full-image RGB metrics are insufficient to prove geometry reliability; held-out LiDAR geometry evaluation remains necessary.
+
+## Visualization Outputs
+
+Training and evaluation scripts produce several complementary output types:
+
+- `periodic_eval/`: fixed-view RGB/depth diagnostic panels during training.
+- `feedback_controller/`: risk, contribution, responsible group, softpatch signal, and audit manifests.
+- `final_evaluation_test_only_v2/`: paper-grade held-out RGB/object/background metrics.
+- `geometry_eval_test_only_v1/`: held-out geometry consistency metrics and panels.
+- `paper_evidence_geofeedback_gs/`: compact tables and figures for paper/PPT writing.
+
+Periodic panels are useful for debugging training dynamics. The main result table should use final held-out evaluation, with geometry claims supported by the geometry evaluation script.
+
+## Limitations
+
+- Current formal evidence is based on a limited Waymo setting and should be expanded to more scenes.
+- B may not be a fully active DA3-only loss setting because of the current global-weight activation behavior.
+- PV-C avoids LiDAR initialization and LiDAR supervision, but still relies on camera poses, COLMAP/SfM, and object track boxes.
+- Feedback currently provides an auditable mechanism and local structure guidance; it should not be claimed as a universal final-metric improvement without additional ablations.
+- DA3 relative structure does not replace metric depth evaluation.
+
+## Citation / Acknowledgement
+
+This project inherits and modifies a Street Gaussians-style dynamic street reconstruction framework and uses third-party components such as Gaussian rasterization, Waymo data readers, COLMAP/SfM tooling, and Depth Anything 3. Please verify upstream licenses and citations before redistribution or paper submission.
+
+Citation metadata is currently a placeholder in `CITATION.cff` and should be updated before public release.

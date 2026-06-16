@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GeoGuardGS training wrapper.
+"""GeoFeedback-GS training wrapper.
 
 The current release keeps the runnable Street Gaussian training code under
 third_party/street_gaussian for compatibility. This wrapper launches that

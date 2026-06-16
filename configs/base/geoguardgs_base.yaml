@@ -1,4 +1,4 @@
-# GeoGuardGS base config. Paths are intentionally relative for server migration.
+# GeoFeedback-GS base config. Paths are intentionally relative for server migration.
 workspace: .
 source_path: data/waymo/002
 model_path: outputs/default_run
